@@ -25,7 +25,6 @@ type Config struct {
 	DBSSLMode           string
 	DBPGChannelBinding  string
 	RedisURL            string
-	RedisToken          string
 }
 
 // Load reads from the environment and returns a Config struct.
@@ -42,6 +41,5 @@ func Load() *Config {
 		DBPGChannelBinding: os.Getenv("DB_PG_CHANNELBINDING"),
 		DBSchema:           os.Getenv("DB_SCHEMA"),
 		RedisURL:           os.Getenv("REDIS_URL"),
-		RedisToken:         os.Getenv("REDIS_TOKEN"),
 	}
 }

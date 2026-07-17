@@ -30,7 +30,7 @@ func main() {
 	cfg := config.Load()
 
 	// 2. Initialize Redis
-	redisClient, err := cache.NewRedisClient(cfg.RedisURL, cfg.RedisToken)
+	redisClient, err := cache.NewRedisClient(cfg.RedisURL)
 	if err != nil {
 		log.Fatalf("Could not connect to Redis: %v", err)
 	}
@@ -81,7 +81,7 @@ func gracefulShutdown(apiServer *http.Server, done chan bool) {
 
 	// The context is used to inform the server it has 5 seconds to finish
 	// the request it is currently handling
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := apiServer.Shutdown(ctx); err != nil {
 		log.Printf("Server forced to shutdown with error: %v", err)

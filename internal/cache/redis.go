@@ -11,17 +11,12 @@ import (
 )
 
 // NewRedisClient initializes and tests the Redis connection
-func NewRedisClient(url string, token string) (*redis.Client, error) {
+func NewRedisClient(url string) (*redis.Client, error) {
 	// Parse the URL (e.g., "redis://user:password@localhost:6379/0")
 	// If you aren't using a URL string, you can use redis.Options directly.
 	opts, err := redis.ParseURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse redis url: %w", err)
-	}
-
-	// Apply the token/password if provided separately
-	if token != "" {
-		opts.Password = token
 	}
 
 	client := redis.NewClient(opts)
@@ -42,9 +37,8 @@ func main() {
 	// Assuming you loaded your config as discussed previously:
 	cfg := config.Load()
 	redisURL := cfg.RedisURL
-	redisToken := cfg.RedisToken
 
-	client, err := NewRedisClient(redisURL, redisToken)
+	client, err := NewRedisClient(redisURL)
 	if err != nil {
 		log.Fatalf("Redis initialization failed: %v", err)
 	}
