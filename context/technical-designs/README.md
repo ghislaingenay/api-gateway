@@ -2,6 +2,7 @@
 
 | ID     | Design                                                                | Status | Feature Spec                                                       |
 | ------ | ------------------------------------------------------------------------ | ------ | ---------------------------------------------------------------------- |
+| TD-000 | [Core Identity Data Model (Users, Profiles & Tenants)](TD-000-core-identity-data-model.md) | Draft | [FEAT-000](../features/FEAT-000-core-identity-data-model.md) |
 | TD-001 | [JWT Authentication (CBAC)](TD-001-jwt-authentication.md)               | Draft  | [FEAT-001](../features/FEAT-001-jwt-authentication.md)                 |
 | TD-002 | [RBAC Data Model](TD-002-rbac-data-model.md)                            | Draft  | [FEAT-002](../features/FEAT-002-rbac-data-model.md)                    |
 | TD-003 | [Authorization Enforcement](TD-003-authorization-enforcement.md)        | Draft  | [FEAT-003](../features/FEAT-003-authorization-enforcement.md)          |

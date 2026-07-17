@@ -1,17 +1,20 @@
 package database
 
 import (
+	"api-gateway/config"
 	"context"
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
 	"strconv"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/joho/godotenv/autoload"
 )
+
+
+var appConfig = config.Load()
 
 // Service represents a service that interacts with a database.
 type Service interface {
@@ -22,19 +25,25 @@ type Service interface {
 	// Close terminates the database connection.
 	// It returns an error if the connection cannot be closed.
 	Close() error
+	GetDB() *sql.DB
 }
 
 type service struct {
 	db *sql.DB
 }
 
+func (s *service) GetDB() *sql.DB {
+	return s.db
+}
+
 var (
-	database   = os.Getenv("BLUEPRINT_DB_DATABASE")
-	password   = os.Getenv("BLUEPRINT_DB_PASSWORD")
-	username   = os.Getenv("BLUEPRINT_DB_USERNAME")
-	port       = os.Getenv("BLUEPRINT_DB_PORT")
-	host       = os.Getenv("BLUEPRINT_DB_HOST")
-	schema     = os.Getenv("BLUEPRINT_DB_SCHEMA")
+	database   = appConfig.DBDatabase
+	password   = appConfig.DBPassword
+	username   = appConfig.DBUser
+	port       = appConfig.DBPort
+	host       = appConfig.DBHost
+	schema     = appConfig.DBSchema
+	sslMode    = appConfig.DBSSLMode
 	dbInstance *service
 )
 
@@ -43,7 +52,7 @@ func New() Service {
 	if dbInstance != nil {
 		return dbInstance
 	}
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&search_path=%s", username, password, host, port, database, schema)
+	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s&search_path=%s", username, password, host, port, database, sslMode, schema)
 	db, err := sql.Open("pgx", connStr)
 	if err != nil {
 		log.Fatal(err)
@@ -57,7 +66,7 @@ func New() Service {
 // Health checks the health of the database connection by pinging the database.
 // It returns a map with keys indicating various health statistics.
 func (s *service) Health() map[string]string {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	stats := make(map[string]string)

@@ -36,6 +36,7 @@ func mustStartPostgresContainer() (func(context.Context, ...testcontainers.Termi
 	database = dbName
 	password = dbPwd
 	username = dbUser
+	sslMode = "disable"
 
 	dbHost, err := dbContainer.Host(context.Background())
 	if err != nil {
