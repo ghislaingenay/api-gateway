@@ -1,6 +1,6 @@
 # TD-000: Core Identity Data Model (Users, Profiles & Tenants)
 
-Status: Doing
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-15
@@ -67,38 +67,38 @@ Consumed by: TD-001 (JWT issuance), TD-003 (authz), TD-004 (routing)
 
 ### tenants
 
-| Column                 | Type      |
-| ---------------------- | --------- |
-| id                     | uuid (PK) |
-| name                   | varchar(255) |
-| slug                   | varchar(100), unique |
-| tier                   | varchar(50) (free, professional, enterprise) |
-| rate_limit_per_minute  | integer   |
-| rate_limit_per_hour    | integer   |
-| max_users              | integer   |
-| features               | jsonb     |
-| is_active              | boolean   |
-| created_at             | timestamptz |
-| updated_at             | timestamptz |
-| deleted_at             | timestamptz (nullable) |
+| Column                | Type                                         |
+| --------------------- | -------------------------------------------- |
+| id                    | uuid (PK)                                    |
+| name                  | varchar(255)                                 |
+| slug                  | varchar(100), unique                         |
+| tier                  | varchar(50) (free, professional, enterprise) |
+| rate_limit_per_minute | integer                                      |
+| rate_limit_per_hour   | integer                                      |
+| max_users             | integer                                      |
+| features              | jsonb                                        |
+| is_active             | boolean                                      |
+| created_at            | timestamptz                                  |
+| updated_at            | timestamptz                                  |
+| deleted_at            | timestamptz (nullable)                       |
 
 Indexes: `idx_tenants_slug`, `idx_tenants_is_active` (partial, `WHERE deleted_at IS NULL`).
 
 ### users
 
-| Column         | Type      |
-| -------------- | --------- |
-| id             | uuid (PK) |
+| Column         | Type                                      |
+| -------------- | ----------------------------------------- |
+| id             | uuid (PK)                                 |
 | tenant_id      | uuid (FK → tenants.id, ON DELETE CASCADE) |
-| role_id        | uuid (FK → roles.id) |
-| email          | varchar(255) |
-| password_hash  | varchar(255) |
-| is_active      | boolean   |
-| email_verified | boolean   |
-| last_login_at  | timestamptz (nullable) |
-| created_at     | timestamptz |
-| updated_at     | timestamptz |
-| deleted_at     | timestamptz (nullable) |
+| role_id        | uuid (FK → roles.id)                      |
+| email          | varchar(255)                              |
+| password_hash  | varchar(255)                              |
+| is_active      | boolean                                   |
+| email_verified | boolean                                   |
+| last_login_at  | timestamptz (nullable)                    |
+| created_at     | timestamptz                               |
+| updated_at     | timestamptz                               |
+| deleted_at     | timestamptz (nullable)                    |
 
 Constraint: `unique_email_per_tenant UNIQUE (tenant_id, email)`.
 
@@ -106,17 +106,17 @@ Indexes: `idx_users_tenant_id`, `idx_users_role_id`, `idx_users_email`, `idx_use
 
 ### profiles
 
-| Column      | Type      |
-| ----------- | --------- |
-| id          | uuid (PK) |
-| user_id     | uuid (FK → users.id, ON DELETE CASCADE), unique |
-| first_name  | varchar(100) |
-| last_name   | varchar(100) |
-| avatar_url  | text      |
-| timezone    | varchar(50), default 'UTC' |
-| metadata    | jsonb     |
-| created_at  | timestamptz |
-| updated_at  | timestamptz |
+| Column     | Type                                            |
+| ---------- | ----------------------------------------------- |
+| id         | uuid (PK)                                       |
+| user_id    | uuid (FK → users.id, ON DELETE CASCADE), unique |
+| first_name | varchar(100)                                    |
+| last_name  | varchar(100)                                    |
+| avatar_url | text                                            |
+| timezone   | varchar(50), default 'UTC'                      |
+| metadata   | jsonb                                           |
+| created_at | timestamptz                                     |
+| updated_at | timestamptz                                     |
 
 Indexes: `idx_profiles_user_id`.
 

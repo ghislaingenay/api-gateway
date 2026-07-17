@@ -1,6 +1,6 @@
 # FEAT-000: Core Identity Data Model (Users, Profiles & Tenants)
 
-Status: Doing
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-15
