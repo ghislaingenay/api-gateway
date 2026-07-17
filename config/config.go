@@ -5,15 +5,12 @@ import (
 )
 
 const (
- EnvDevelopment = "development"
- EnvProduction  = "production"
+	EnvDevelopment = "development"
+	EnvProduction  = "production"
 )
 
-var  Env =  os.Getenv("APP_ENV")
-
 func IsDevelopmentMode() bool {
-	res := os.Getenv("APP_ENV")
-	return res == EnvDevelopment
+	return os.Getenv("APP_ENV") == EnvDevelopment
 }
 
 // Config holds all environment variables
