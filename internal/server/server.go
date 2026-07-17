@@ -1,6 +1,7 @@
 package server
 
 import (
+	"api-gateway/internal/database"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -13,14 +14,14 @@ import (
 
 type Server struct {
 	port int
-	db   *sql.DB
+	db database.Service
 }
 
 func NewServer(db *sql.DB) *http.Server {
 	port, _ := strconv.Atoi(os.Getenv("PORT"))
 	NewServer := &Server{
 		port: port,
-		db:   db,
+		db:   database.New(),
 	}
 
 	// Declare Server config
