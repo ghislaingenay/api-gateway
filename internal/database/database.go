@@ -1,17 +1,20 @@
 package database
 
 import (
+	"api-gateway/config"
 	"context"
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
 	"strconv"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/joho/godotenv/autoload"
 )
+
+
+var appConfig = config.Load()
 
 // Service represents a service that interacts with a database.
 type Service interface {
@@ -22,19 +25,24 @@ type Service interface {
 	// Close terminates the database connection.
 	// It returns an error if the connection cannot be closed.
 	Close() error
+	GetDB() *sql.DB
 }
 
 type service struct {
 	db *sql.DB
 }
 
+func (s *service) GetDB() *sql.DB {
+	return s.db
+}
+
 var (
-	database   = os.Getenv("BLUEPRINT_DB_DATABASE")
-	password   = os.Getenv("BLUEPRINT_DB_PASSWORD")
-	username   = os.Getenv("BLUEPRINT_DB_USERNAME")
-	port       = os.Getenv("BLUEPRINT_DB_PORT")
-	host       = os.Getenv("BLUEPRINT_DB_HOST")
-	schema     = os.Getenv("BLUEPRINT_DB_SCHEMA")
+	database   = appConfig.DBDatabase
+	password   = appConfig.DBPassword
+	username   = appConfig.DBUser
+	port       = appConfig.DBPort
+	host       = appConfig.DBHost
+	schema     = appConfig.DBSchema
 	dbInstance *service
 )
 

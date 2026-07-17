@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
@@ -8,22 +9,18 @@ import (
 	"time"
 
 	_ "github.com/joho/godotenv/autoload"
-
-	"api-gateway/internal/database"
 )
 
 type Server struct {
 	port int
-
-	db database.Service
+	db   *sql.DB
 }
 
-func NewServer() *http.Server {
+func NewServer(db *sql.DB) *http.Server {
 	port, _ := strconv.Atoi(os.Getenv("PORT"))
 	NewServer := &Server{
 		port: port,
-
-		db: database.New(),
+		db:   db,
 	}
 
 	// Declare Server config
