@@ -1,10 +1,10 @@
 # TD-000: Core Identity Data Model (Users, Profiles & Tenants)
 
-Status: Draft
+Status: Doing
 
 Owner: Ghislain Genay
 Created: 2026-07-15
-Last Updated: 2026-07-15
+Last Updated: 2026-07-17
 
 Feature Spec: [FEAT-000 - Core Identity Data Model (Users, Profiles & Tenants)](../features/FEAT-000-core-identity-data-model.md)
 
@@ -214,11 +214,11 @@ None at this layer; caching of user/session data (if any) belongs to TD-001.
 
 # 10. Risks
 
-## Risk 1
+## Risk 1 (Resolved)
 
-Migration ordering: `users.role_id` depends on TD-002's `roles` table existing first, creating a cross-feature migration dependency.
+Migration ordering: `users.role_id` depends on a `roles` table existing first, creating a cross-feature migration dependency with TD-002.
 
-Mitigation: sequence migrations explicitly (roles/permissions before users) and document the required order in both TD-000 and TD-002.
+Resolution: rather than block on TD-002 (still `Draft` at implementation time), this feature creates the `roles` table itself (`internal/database/migrations/00002_create_roles.sql`, before `users`), seeded with the admin/manager/viewer roles. TD-002/FEAT-002 have been updated to depend on this table instead of creating their own.
 
 ---
 
@@ -234,21 +234,21 @@ Mitigation: application layer should default to soft delete (`deleted_at`) for t
 
 ## Deployment
 
-1. Run Goose migrations in order: tenants → roles/permissions (TD-002) → users → profiles
-2. Deploy gateway; downstream features (TD-001, TD-003, TD-004) can now resolve tenant/user/profile data
+1. Run Goose migrations in order: tenants → roles (this feature) → users → profiles
+2. Deploy gateway; downstream features (TD-001, TD-002's `permissions` table, TD-003, TD-004) can now resolve tenant/user/role/profile data
 3. Verify referential integrity with a smoke-test insert across all three tables
 
 ## Rollback
 
-1. Roll back migrations in reverse order (Goose down): profiles → users → roles/permissions → tenants
+1. Roll back migrations in reverse order (Goose down): profiles → users → roles → tenants
 2. Roll back gateway deployment
 
 ---
 
-# 12. Open Questions
+# 12. Open Questions (Resolved)
 
-- Should tenant/user hard-delete cascades be restricted at the DB level (e.g., `ON DELETE RESTRICT` with an explicit soft-delete-only application policy) instead of `ON DELETE CASCADE`? Not specified in the project overview — flagged for confirmation before implementation.
-- Do we need a seed/bootstrap tenant + admin user for local development, and if so, does that belong here or in TD-010 (dev environment)?
+- ~~Should tenant/user hard-delete cascades be restricted at the DB level (e.g., `ON DELETE RESTRICT` with an explicit soft-delete-only application policy) instead of `ON DELETE CASCADE`?~~ **Resolved: `ON DELETE CASCADE`**, as confirmed by the user and required by FEAT-000's own Acceptance Criteria ("Deleting a tenant cascades to delete its users", "Deleting a user cascades to delete their profile"). Implemented in `internal/database/migrations/00003_create_users.sql` and `00004_create_profiles.sql`; cascade behavior is covered by tests in `internal/database/migrations_test.go`. Risk 2's mitigation (application layer defaults to soft delete, hard delete is an admin-only escape hatch) still stands as the operational guidance.
+- ~~Do we need a seed/bootstrap tenant + admin user for local development?~~ **Resolved: not implemented in this feature.** Deferred as out of scope — if needed, it belongs in TD-010 (dev environment) or a later seed/admin-provisioning feature.
 
 ---
 

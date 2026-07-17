@@ -4,7 +4,7 @@ Status: Draft
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-17
 
 Technical Design: [TD-002 - RBAC Data Model (Roles & Permissions)](../technical-designs/TD-002-rbac-data-model.md)
 
@@ -14,7 +14,9 @@ Technical Design: [TD-002 - RBAC Data Model (Roles & Permissions)](../technical-
 
 ## Summary
 
-The persistent data model backing role-based access control: `roles` and `permissions` tables in PostgreSQL, seeded with the three system roles (Admin, Manager, Viewer) and their granular `resource:action` permission sets. This feature owns the schema, seed data, and read APIs for roles/permissions — enforcement itself is handled by [[FEAT-003]].
+The persistent data model backing role-based access control: `roles` and `permissions` tables in PostgreSQL, seeded with the three system roles (Admin, Manager, Viewer) and their granular `resource:action` permission sets. This feature owns the read APIs for roles/permissions — enforcement itself is handled by [[FEAT-003]].
+
+> **Note (2026-07-17):** the `roles` table and its schema/seed data were created by [[FEAT-000]] (`internal/database/migrations/00002_create_roles.sql`), since `users.role_id` needed a `roles` table to reference and FEAT-000 landed first. This feature's migration now only needs to create and seed `permissions`; do not re-create `roles`.
 
 ## Problem
 
@@ -75,12 +77,11 @@ So that I can correctly assign roles to my team members
 
 ### FR-1
 
-The system must persist `roles` and `permissions` tables per the schema in the project overview, with system roles marked `is_system_role = true` and immutable.
+The system must persist a `permissions` table per the schema in the project overview. The `roles` table (schema + admin/manager/viewer seed data, `is_system_role = true`) already exists, created by [[FEAT-000]].
 
 #### Acceptance Criteria
 
-- [ ] Migration creates `roles` and `permissions` tables with defined indexes
-- [ ] Migration seeds admin, manager, viewer roles with correct permission arrays
+- [ ] Migration creates `permissions` table with defined indexes (`roles` already exists from FEAT-000 — do not re-create it)
 - [ ] Migration seeds all permissions listed in the permission matrix
 - [ ] Attempting to delete a system role is rejected
 
@@ -146,6 +147,7 @@ The system must expose a `GET /permissions` endpoint returning all available per
 
 ## Internal
 
+- [[FEAT-000]] Core Identity Data Model (owns the `roles` table and `models.Role`; this feature only adds `permissions`)
 - [[FEAT-001]] JWT Authentication (permissions are embedded in JWT claims at issuance)
 - [[FEAT-003]] Authorization Enforcement (consumes this data at runtime)
 

@@ -1,10 +1,10 @@
 # FEAT-000: Core Identity Data Model (Users, Profiles & Tenants)
 
-Status: Draft
+Status: Doing
 
 Owner: Ghislain Genay
 Created: 2026-07-15
-Last Updated: 2026-07-15
+Last Updated: 2026-07-17
 
 Technical Design: [TD-000 - Core Identity Data Model (Users, Profiles & Tenants)](../technical-designs/TD-000-core-identity-data-model.md)
 
@@ -82,9 +82,9 @@ The system must persist a `tenants` table storing organization-level configurati
 
 #### Acceptance Criteria
 
-- [ ] Migration creates `tenants` table with defined indexes (`idx_tenants_slug`, `idx_tenants_is_active`)
-- [ ] `slug` is unique and used for tenant resolution
-- [ ] Soft delete via `deleted_at` is supported
+- [x] Migration creates `tenants` table with defined indexes (`idx_tenants_slug`, `idx_tenants_is_active`)
+- [x] `slug` is unique and used for tenant resolution
+- [x] Soft delete via `deleted_at` is supported
 
 ---
 
@@ -94,10 +94,10 @@ The system must persist a `users` table scoped to a tenant, referencing a role, 
 
 #### Acceptance Criteria
 
-- [ ] Migration creates `users` table with `tenant_id` and `role_id` foreign keys
-- [ ] `(tenant_id, email)` is unique via `unique_email_per_tenant`
-- [ ] Deleting a tenant cascades to delete its users
-- [ ] Migration creates indexes: `idx_users_tenant_id`, `idx_users_role_id`, `idx_users_email`, `idx_users_is_active`
+- [x] Migration creates `users` table with `tenant_id` and `role_id` foreign keys
+- [x] `(tenant_id, email)` is unique via `unique_email_per_tenant`
+- [x] Deleting a tenant cascades to delete its users
+- [x] Migration creates indexes: `idx_users_tenant_id`, `idx_users_role_id`, `idx_users_email`, `idx_users_is_active`
 
 ---
 
@@ -107,9 +107,9 @@ The system must persist a `profiles` table as a one-to-one extension of `users`,
 
 #### Acceptance Criteria
 
-- [ ] Migration creates `profiles` table with a unique `user_id` foreign key
-- [ ] Deleting a user cascades to delete their profile
-- [ ] Migration creates `idx_profiles_user_id`
+- [x] Migration creates `profiles` table with a unique `user_id` foreign key
+- [x] Deleting a user cascades to delete their profile
+- [x] Migration creates `idx_profiles_user_id`
 
 ---
 
@@ -119,9 +119,9 @@ The system must expose Go data models (`Tenant`, `User`, `Profile`) with JSON/db
 
 #### Acceptance Criteria
 
-- [ ] `User.PasswordHash` is never serialized to JSON
-- [ ] `User` exposes `Tenant`, `Role`, `Profile` as optional populated relationships
-- [ ] Validation tags reject malformed emails, empty names, and out-of-range tiers
+- [x] `User.PasswordHash` is never serialized to JSON
+- [x] `User` exposes `Tenant`, `Role`, `Profile` as optional populated relationships
+- [x] Validation tags reject malformed emails, empty names, and out-of-range tiers
 
 ---
 
