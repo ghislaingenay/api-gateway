@@ -2,6 +2,7 @@
 
 | ID       | Feature                                                        | Status | Technical Design                                                        |
 | -------- | --------------------------------------------------------------- | ------ | ------------------------------------------------------------------------- |
+| FEAT-000 | [Core Identity Data Model (Users, Profiles & Tenants)](FEAT-000-core-identity-data-model.md) | Draft | [TD-000](../technical-designs/TD-000-core-identity-data-model.md) |
 | FEAT-001 | [JWT Authentication (CBAC)](FEAT-001-jwt-authentication.md)     | Draft  | [TD-001](../technical-designs/TD-001-jwt-authentication.md)               |
 | FEAT-002 | [RBAC Data Model](FEAT-002-rbac-data-model.md)                  | Draft  | [TD-002](../technical-designs/TD-002-rbac-data-model.md)                  |
 | FEAT-003 | [Authorization Enforcement](FEAT-003-authorization-enforcement.md) | Draft  | [TD-003](../technical-designs/TD-003-authorization-enforcement.md)     |
