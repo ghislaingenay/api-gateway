@@ -3,9 +3,11 @@ package validation
 import (
 	"testing"
 
-	"api-gateway/internal/tenant"
 	"api-gateway/internal/profile"
+	"api-gateway/internal/rbac"
+	"api-gateway/internal/tenant"
 	"api-gateway/internal/testfixtures"
+	"api-gateway/internal/user"
 
 	"github.com/google/uuid"
 )
@@ -77,12 +79,12 @@ func TestValidate_Profile(t *testing.T) {
 func TestValidate_Role(t *testing.T) {
 	tests := []struct {
 		name    string
-		role    Role
+		role    rbac.Role
 		wantErr bool
 	}{
-		{"valid role", Role{Name: "admin", DisplayName: "Administrator", Description: "Full access"}, false},
-		{"invalid role name fails", Role{Name: "superuser", DisplayName: "Super User", Description: "desc"}, true},
-		{"empty description fails", Role{Name: "admin", DisplayName: "Administrator", Description: ""}, true},
+		{"valid role", rbac.Role{Name: "admin", DisplayName: "Administrator", Description: "Full access"}, false},
+		{"invalid role name fails", rbac.Role{Name: "superuser", DisplayName: "Super User", Description: "desc"}, true},
+		{"empty description fails", rbac.Role{Name: "admin", DisplayName: "Administrator", Description: ""}, true},
 	}
 
 	for _, tt := range tests {
@@ -95,8 +97,8 @@ func TestValidate_Role(t *testing.T) {
 	}
 }
 
-func validUser() User {
-	return User{
+func validUser() user.User {
+	return user.User{
 		ID:           uuid.New(),
 		TenantID:     uuid.New(),
 		RoleID:       uuid.New(),
@@ -108,14 +110,14 @@ func validUser() User {
 func TestValidate_User(t *testing.T) {
 	tests := []struct {
 		name    string
-		mutate  func(*User)
+		mutate  func(*user.User)
 		wantErr bool
 	}{
-		{"valid user", func(u *User) {}, false},
-		{"malformed email fails", func(u *User) { u.Email = "not-an-email" }, true},
-		{"empty email fails", func(u *User) { u.Email = "" }, true},
-		{"missing tenant id fails", func(u *User) { u.TenantID = uuid.Nil }, true},
-		{"missing role id fails", func(u *User) { u.RoleID = uuid.Nil }, true},
+		{"valid user", func(u *user.User) {}, false},
+		{"malformed email fails", func(u *user.User) { u.Email = "not-an-email" }, true},
+		{"empty email fails", func(u *user.User) { u.Email = "" }, true},
+		{"missing tenant id fails", func(u *user.User) { u.TenantID = uuid.Nil }, true},
+		{"missing role id fails", func(u *user.User) { u.RoleID = uuid.Nil }, true},
 	}
 
 	for _, tt := range tests {
