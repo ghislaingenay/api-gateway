@@ -79,11 +79,38 @@ is `Doing` in `context/features/README.md` as candidates.
 6. **Only after reporting**, if the user asks you to fix findings, do so as a
    separate step — re-verify afterward rather than assuming the fix is correct.
 
-7. **If everything blocking and should-fix is resolved**, offer to flip the
-   feature's Status to `Done` in `context/features/README.md`, the feature file,
-   the TD's `README.md` row, and the TD file header — but only with the user's
-   confirmation, and only after re-running build/vet/test to confirm the final
-   state is green.
+7. **If everything blocking and should-fix is resolved**, offer to close out the
+   feature — but only with the user's confirmation, and only after re-running
+   build/vet/test to confirm the final state is green. Closing out means all of:
+   - Set Status to `Done` in `context/features/README.md`'s row for this
+     feature, and in the `Status:` line inside the feature file itself. Update
+     the feature file's `Last Updated:` to today's date.
+   - Set Status to `Done` in `context/technical-designs/README.md`'s row for
+     the paired TD, and in the TD file's own header `Status:` line if present.
+     Update its `Last Updated:` too.
+   - Reset `context/current-feature.md` back to its placeholder state (below)
+     — it tracks the single feature currently in progress, so once this one is
+     `Done` it must not keep pointing at it.
+
+   Placeholder content for `context/current-feature.md`:
+
+   ```markdown
+   # Current Feature
+
+   _No feature currently in progress._
+
+   ## File
+
+   _(link to context/features/FEAT-NNN-*.md once one is picked up)_
+
+   ## Goals
+
+   _(populated from the feature's Functional Requirements when work starts)_
+
+   ## Notes
+
+   _(short summary populated when work starts)_
+   ```
 
 ## Notes
 
@@ -95,3 +122,7 @@ is `Doing` in `context/features/README.md` as candidates.
   it as a finding so the user can confirm the decision was intentional.
 - Never commit, push, or change Status to `Done` without explicit user
   confirmation, per `context/ai-interaction.md`.
+- Only reset `context/current-feature.md` if its `## File` link actually points
+  at the feature being closed out — if it's already tracking a different
+  feature (someone moved on before this review ran), leave it alone and just
+  flag the mismatch to the user.
