@@ -1,7 +1,7 @@
 -- +goose Up
 CREATE TABLE roles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(50) NOT NULL,
     display_name VARCHAR(100) NOT NULL,
     description TEXT NOT NULL,
     permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -10,7 +10,7 @@ CREATE TABLE roles (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_roles_name ON roles(name);
+CREATE UNIQUE INDEX idx_roles_name ON roles(name);
 
 INSERT INTO roles (name, display_name, description, permissions, is_system_role) VALUES
 (
