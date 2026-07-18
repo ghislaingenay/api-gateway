@@ -42,6 +42,19 @@ func main() {
 	defer dbService.Close()
 	fmt.Println("Database connected successfully!")
 
+
+	featureFlags := config.LoadFeatureFlags()
+	allowAutoDBMigration := featureFlags.AllowAutoDBMigration
+
+	if allowAutoDBMigration {
+		if err := database.Migrate(dbService.GetDB()); err != nil {
+			log.Fatalf("Could not run database migrations: %v", err)
+		}
+		fmt.Println("Database migrations applied successfully!")
+	} else {
+		fmt.Println("Auto database migration is disabled. Skipping migrations.")
+	}
+
 	// 4. Inject dependencies into your application struct
 	app := &App{
 		Config: cfg,

@@ -4,7 +4,7 @@ Status: Draft
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-17
 
 Feature Spec: [FEAT-002 - RBAC Data Model (Roles & Permissions)](../features/FEAT-002-rbac-data-model.md)
 
@@ -14,11 +14,13 @@ Feature Spec: [FEAT-002 - RBAC Data Model (Roles & Permissions)](../features/FEA
 
 ## Summary
 
-PostgreSQL schema and seed data for `roles` and `permissions`, managed via Goose migrations, plus read-only HTTP endpoints and an in-memory role-permission cache loaded at gateway startup.
+PostgreSQL schema and seed data for `permissions`, managed via Goose migrations, plus read-only HTTP endpoints and an in-memory role-permission cache loaded at gateway startup.
+
+> **Note (2026-07-17):** the `roles` table (schema + admin/manager/viewer seed data) was created by [[FEAT-000]] (`internal/database/migrations/00002_create_roles.sql`), since `users.role_id` needed a `roles` table to reference a FK to and FEAT-000 landed first. TD-002 no longer creates `roles` — it only creates `permissions` and reads the existing `roles` table for the `RoleStore`/endpoints below. Do not re-add a `CREATE TABLE roles` migration here.
 
 ## Goals
 
-- Migration-managed, seeded roles/permissions matching the documented matrix
+- Migration-managed, seeded `permissions` table matching the documented matrix (the `roles` table and its seed data already exist, created by [[FEAT-000]])
 - In-memory cache for O(1) permission lookups at runtime
 
 ## Non-Goals
@@ -33,10 +35,10 @@ PostgreSQL schema and seed data for `roles` and `permissions`, managed via Goose
 ## High-Level Design
 
 ```
-Goose Migration
+Goose Migration (permissions only; roles table already exists from FEAT-000)
 │
 ▼
-PostgreSQL (roles, permissions tables)
+PostgreSQL (roles [existing], permissions [new] tables)
 │
 ▼ (loaded at startup)
 In-Memory RoleStore (map[string]Role)
@@ -51,20 +53,20 @@ GET /roles, GET /permissions handlers
 
 ## New Components
 
-- Goose migration files: `NNN_create_roles_and_permissions.sql`
-- `models.Role`, `models.Permission` (per project overview Go data models)
+- Goose migration file: `NNN_create_permissions.sql` (permissions table + seed data only — `roles` already exists from FEAT-000)
+- `models.Permission` (per project overview Go data models; `models.Role` already exists from FEAT-000)
 - `store.RoleStore` — loads roles/permissions into memory at startup, exposes `GetRole(name string) (*Role, bool)`
 - `handlers.RolesHandler`, `handlers.PermissionsHandler`
 
 ## Modified Components
 
-- None (new feature)
+- None. Depends on the `roles` table and `models.Role` created by [[FEAT-000]]; does not modify or re-create them.
 
 ---
 
 # 4. Data Model
 
-## New Tables
+## Existing Tables (created by FEAT-000, not modified here)
 
 ### roles
 
@@ -78,6 +80,10 @@ GET /roles, GET /permissions handlers
 | is_system_role  | boolean   |
 | created_at      | timestamptz |
 | updated_at      | timestamptz |
+
+Already created and seeded (admin/manager/viewer) by `internal/database/migrations/00002_create_roles.sql` in FEAT-000. Listed here for reference only.
+
+## New Tables
 
 ### permissions
 
@@ -223,7 +229,7 @@ Mitigation: MVP treats roles as immutable/system-defined, restart required for c
 
 ## Deployment
 
-1. Run Goose migration to create and seed tables
+1. Run Goose migration to create and seed the `permissions` table (`roles` already exists from FEAT-000)
 2. Deploy gateway; RoleStore loads at startup
 3. Verify `GET /roles` returns expected seed data
 
