@@ -131,3 +131,303 @@ Always use the latest stable version of Go (1.22 or newer) and be familiar with 
 - Offer suggestions for testing the API endpoints using Go's testing package.
 
 Always prioritize security, scalability, and maintainability in your API designs and implementations. Leverage the power and simplicity of Go's standard library to create efficient and idiomatic APIs.
+
+## Package Organization and Domain Ownership
+
+### Package Design
+
+- Organize code primarily by business domain/feature, not by technical layer.
+- Prefer:
+
+```text
+internal/
+├── tenant/
+├── apikey/
+├── auth/
+├── ratelimit/
+└── gateway/
+```
+
+over:
+
+```text
+internal/
+├── handlers/
+├── services/
+├── repositories/
+└── models/
+```
+
+- Keep code that changes together in the same package.
+- Avoid large, generic packages such as `models`, `utils`, `helpers`, or `common`.
+- Create new packages only when they represent:
+  - A distinct business domain.
+  - Shared infrastructure.
+  - A clear architectural boundary.
+
+### Domain Package Structure
+
+```text
+internal/
+└── tenant/
+    ├── model.go
+    ├── dto.go
+    ├── repository.go
+    ├── service.go
+    ├── handler.go
+    └── errors.go
+```
+
+### Infrastructure Package Structure
+
+```text
+internal/
+├── database/
+├── validation/
+├── config/
+├── cache/
+├── logger/
+└── response/
+```
+
+---
+
+## Models and DTOs
+
+### Domain Models
+
+- Domain models belong to the package that owns the domain.
+- Avoid centralized `models` packages unless strongly justified.
+
+```go
+package tenant
+
+type Tenant struct {
+    ID   uuid.UUID
+    Name string
+}
+```
+
+### DTOs
+
+- Separate API request/response objects from domain models.
+- Place DTOs in `dto.go` within the owning package.
+- Never expose database entities directly through API responses.
+
+```go
+type CreateTenantRequest struct {
+    Name string `json:"name"`
+}
+```
+
+---
+
+## Validation Standards
+
+### Validation Rules
+
+- Validation tags remain on DTOs and domain models.
+
+```go
+type CreateTenantRequest struct {
+    Slug string `validate:"required,slug"`
+}
+```
+
+### Custom Validators
+
+- Custom validator implementations must live in a dedicated validation package.
+
+```text
+internal/
+└── validation/
+    ├── validator.go
+    ├── slug.go
+    └── timezone.go
+```
+
+- Register validators centrally during startup.
+- Handlers validate requests before invoking services.
+
+---
+
+## Error Handling Standards
+
+### Error Propagation
+
+- Return errors rather than panic whenever possible.
+- Wrap errors with context.
+
+```go
+return fmt.Errorf("fetch tenant: %w", err)
+```
+
+### Sentinel Errors
+
+Use sentinel errors when callers need branching behavior.
+
+```go
+var ErrTenantNotFound = errors.New("tenant not found")
+```
+
+```go
+if errors.Is(err, ErrTenantNotFound) {
+    // handle not found
+}
+```
+
+### Custom Error Types
+
+Use custom error types only when structured information is required.
+
+```go
+type ValidationError struct {
+    Field string
+    Rule  string
+}
+```
+
+### Error Ownership
+
+- Define errors in the package that owns the domain.
+
+```text
+internal/
+├── tenant/errors.go
+├── apikey/errors.go
+└── auth/errors.go
+```
+
+- Avoid a single global error package containing all application errors.
+
+---
+
+## Startup and Initialization
+
+### Constructors
+
+Prefer returning errors:
+
+```go
+func NewValidator() (*validator.Validate, error)
+```
+
+Avoid panics during initialization unless failure is unrecoverable.
+
+### Panic Usage
+
+`panic` is acceptable only for:
+
+- Unrecoverable startup failures.
+- Invalid application state.
+- Programmer errors.
+
+Functions that intentionally panic should use the `Must` prefix.
+
+```go
+MustLoadConfig()
+MustConnectDatabase()
+```
+
+---
+
+## Database Migrations
+
+### Migration Execution
+
+- Do not automatically run database migrations during production server startup.
+- Treat migrations as a separate deployment concern.
+
+Preferred flow:
+
+```text
+Deploy Migration Job
+        ↓
+Run Migrations
+        ↓
+Deploy Application
+```
+
+### Application Startup
+
+Avoid:
+
+```go
+database.Migrate(db)
+startServer()
+```
+
+Prefer:
+
+```bash
+go run cmd/migrate/main.go
+go run cmd/server/main.go
+```
+
+### Local Development
+
+- Automatic migrations may be enabled only for local development.
+
+---
+
+## Dependency Injection
+
+### Interfaces
+
+- Define interfaces near the consumer, not the implementation.
+
+```go
+type TenantRepository interface {
+    GetByID(ctx context.Context, id uuid.UUID) (*Tenant, error)
+}
+```
+
+### Dependency Construction
+
+Use constructor injection:
+
+```go
+func NewService(
+    repo TenantRepository,
+    logger Logger,
+) *Service
+```
+
+Avoid service locators and global dependency containers.
+
+---
+
+## API Layer Responsibilities
+
+### Handlers
+
+Handlers should only:
+
+- Parse requests.
+- Validate input.
+- Call services.
+- Return responses.
+
+Handlers must not contain:
+
+- Business logic.
+- Database access.
+- External service calls.
+
+### Services
+
+Services should:
+
+- Contain business rules.
+- Orchestrate repositories.
+- Coordinate external dependencies.
+
+### Repositories
+
+Repositories should:
+
+- Encapsulate persistence.
+- Contain database-specific logic.
+- Return domain entities.
+
+Repositories should not contain business rules.
