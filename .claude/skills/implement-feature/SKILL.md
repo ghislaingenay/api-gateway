@@ -123,46 +123,41 @@ Status is `Draft` and ask them to pick one.
    - If the feature touches an HTTP surface, verify it manually (e.g. `curl`)
      per `context/ai-interaction.md`'s workflow before declaring it done.
 
-6. **Verify with an independent subagent before declaring anything done.**
-   - Spawn an `Explore`-or-general-purpose subagent via the Agent tool (run it
-     in the foreground — its findings gate the next step) with a self-contained
-     prompt that:
-     - Points it at the feature file and TD file paths (don't paraphrase their
-       content — the subagent has no memory of this conversation, so tell it to
-       read the docs itself).
-     - Points it at what changed: the branch name and `git diff <base>...HEAD`
-       (or the specific files touched), not a summary of your intentions.
-     - Asks it to check, independently: every Acceptance Criteria checkbox
-       against the actual code, the TD's Data Model/Components/API Design
-       sections against what was built, the feature's Business Rules and Edge
-       Cases against what's enforced, and Non-Goals against scope creep.
-     - Points it at `context/coding-standards.md` and asks it to flag
-       violations directly: package-by-layer instead of package-by-domain,
-       domain entities returned through API responses instead of DTOs, errors
-       defined outside the owning package, panics outside `Must`-prefixed
-       functions, migrations invoked from server startup, interfaces defined
-       next to the implementation instead of the consumer, or business logic
-       leaking into handlers/repositories.
-     - Asks it to run `gofmt -l .`, `go vet ./...`, `go build ./...`, and
-       `go test ./...` and report failures.
-     - Asks for a severity-ranked list back (Blocking / Should-fix / Note) with
-       file:line evidence — not a pass/fail opinion.
-   - This subagent step is the same verification method as the
-     `review-technical-design` skill; reuse that skill's dimensions if invoked
-     separately later, but here it runs automatically as part of implementation.
-   - If the subagent reports Blocking findings, fix them and re-run the
-     verification subagent before continuing. Don't self-certify — a fresh
-     subagent with no stake in the implementation is the check, not your own
-     read of the diff.
+6. **Verify by invoking the `review-technical-design` skill before declaring
+   anything done — do not write your own ad-hoc verification prompt here.**
+   - Call the Skill tool with `skill: review-technical-design` and
+     `args: <the same feature id/slug you resolved in step 1>`.
+   - That skill is the single source of truth for verification: it reads the
+     FEAT/TD docs itself, diffs against the base branch, checks data model
+     fidelity, API contract, acceptance criteria, business rules/edge cases,
+     non-goals, security mitigations, coding standards, and runs
+     `go build`/`go vet`/`go test` — then reports a severity-ranked list
+     (Blocking / Should-fix / Note) with file:line evidence.
+   - Run it as its own step, not folded into your implementation context —
+     treat its findings the same way you would an independent subagent's:
+     don't self-certify, and don't let your own read of the diff override it.
+   - **Stop it short of closeout.** `review-technical-design`'s step 7 (setting
+     Status to `Done` and resetting `context/current-feature.md`) is out of
+     scope here — this skill owns the Doing→Done handoff to the user (see
+     step 7 below). When invoking it mid-implementation, tell it explicitly:
+     only run its verification and reporting steps (1–6); do not close out the
+     feature.
+   - If it reports Blocking findings, fix them and re-invoke the skill before
+     continuing — a fresh, independent verification pass is the check, not
+     your own judgment that the fix is correct.
 
 7. **Update checkboxes and status once the subagent verification is clean.**
    - Check off each satisfied Acceptance Criteria box in the feature file.
    - Check off each goal in `context/current-feature.md`.
    - Leave the feature's Status as `Doing` — do NOT set it to `Done` yourself.
-     Report to the user what was implemented, the subagent's verification
+     Report to the user what was implemented, the `review-technical-design`
      findings (including any Should-fix/Note items left open), and any Open
      Questions from the TD that still need a human decision. Let the user
      confirm completion and flip the status to `Done`/`Review` themselves.
+   - `review-technical-design` checks spec fidelity (does the code match the
+     TD/FEAT), not general code quality. In the same report, suggest the user
+     run `/code-review` if they also want a correctness/simplification/
+     efficiency pass — don't run it automatically here.
 
 8. **Do not commit or merge without explicit permission** — `context/ai-interaction.md`
    requires asking first, and commits must use conventional prefixes restricted to

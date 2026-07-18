@@ -54,10 +54,46 @@ is `Doing` in `context/features/README.md` as candidates.
    - **Security & risk mitigations**: check the TD's "Security" and "Risks →
      Mitigation" sections were actually built in (e.g. `password_hash` tagged
      `json:"-"`, tenant-scoping on queries, mitigations for named risks).
-   - **Coding standards**: spot-check against `context/coding-standards.md`
-     (Clean Architecture layering, wrapped errors, no global state, table-driven
-     tests, no secrets/plaintext leakage) — note violations but weight them
-     below functional correctness.
+   - **Coding standards & Go best practices**: read `context/coding-standards.md`
+     in full and check every changed file against it, not just a spot-check —
+     note violations but weight them below functional correctness:
+     - **Architecture**: Clean Architecture layering respected (handlers only
+       parse/validate/call-service/respond; services hold business rules with
+       no HTTP concerns; repositories only persist, no business logic);
+       package-by-domain, not package-by-layer; no new/expanded `models`,
+       `utils`, `helpers`, or `common` packages.
+     - **Errors**: every error checked and handled explicitly; wrapped with
+       `fmt.Errorf("context: %w", err)` at boundary crossings; callers branch
+       with `errors.Is`/`errors.As`; sentinel/custom errors defined in the
+       owning package, not a global errors package; no `panic` outside
+       `Must`-prefixed startup functions; no swallowed (`_ = err`) errors on a
+       path that can actually fail.
+     - **Interfaces & DI**: public functions accept interfaces, not concrete
+       types, where a consumer needs substitutability; interfaces declared next
+       to the consumer, sized to only the methods it calls; dependencies wired
+       via constructor injection — no service locators, no package-level
+       mutable globals.
+     - **Concurrency**: any goroutine has a clear owner/lifecycle and exits
+       cleanly on `context.Context` cancellation; shared mutable state guarded
+       by a mutex or channel; no unbounded goroutine spawning per-request
+       without a cap/pool.
+     - **Context propagation**: `context.Context` is the first parameter and is
+       actually threaded through service/repository/external calls, not
+       dropped or replaced with `context.Background()` mid-chain.
+     - **Resource handling**: `defer` used to close rows/files/connections/tx
+       right after acquisition; no leaked handles on early-return error paths.
+     - **Idiomatic Go**: short, single-responsibility functions; naming follows
+       Go conventions (MixedCaps, no stutter like `user.UserID`); no
+       unnecessary allocations or premature optimization; `net/http.ServeMux`
+       method+pattern routing per Go 1.22+ conventions; exported
+       functions/types have GoDoc-style comments.
+     - **Tooling**: `gofmt -l .` / `goimports -l .` clean, `go vet ./...`
+       clean, and `golangci-lint run` clean if the repo has it configured —
+       run these, don't assume.
+     - **Security-adjacent Go patterns**: no plaintext secrets in structs sent
+       over the wire (`json:"-"` on sensitive fields), input validation before
+       a service touches raw request data, no SQL built via string
+       concatenation (parameterized queries only).
    - **Tests**: confirm tests exist for the acceptance criteria and edge cases,
      and that `go build ./...`, `go vet ./...`, and `go test ./...` pass. Run
      them.
