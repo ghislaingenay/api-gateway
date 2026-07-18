@@ -1,6 +1,4 @@
-// Package models defines the core identity data model (tenants, users,
-// roles, profiles) shared by every identity-adjacent feature.
-package models
+package rbac
 
 import (
 	"time"

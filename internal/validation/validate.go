@@ -1,21 +1,39 @@
-package models
+package validation
 
 import (
+	"sync"
 	"time"
 
 	"github.com/go-playground/validator/v10"
 )
 
-var validate = newValidator()
+var (
+	instance *validator.Validate
+	once     sync.Once
+	initErr  error
+)
 
-func newValidator() *validator.Validate {
-	v := validator.New()
+// getValidator returns the singleton validator instance, initializing it once.
+func getValidator() (*validator.Validate, error) {
+	once.Do(func() {
+		v := validator.New()
 
-	v.RegisterValidation("slug", validateSlug)
-	v.RegisterValidation("timezone", validateTimezone)
+		if err := v.RegisterValidation("slug", validateSlug); err != nil {
+			initErr = err
+			return
+		}
 
-	return v
+		if err := v.RegisterValidation("timezone", validateTimezone); err != nil {
+			initErr = err
+			return
+		}
+
+		instance = v
+	})
+
+	return instance, initErr
 }
+
 
 // validateSlug allows lowercase letters, digits, and hyphens, and must not
 // start or end with a hyphen.
@@ -41,8 +59,12 @@ func validateTimezone(fl validator.FieldLevel) bool {
 	return err == nil
 }
 
-// Validate runs struct-level validation on any of the identity models,
-// checking the `validate` tags declared on their fields.
+
 func Validate(s interface{}) error {
+	validate, err := getValidator()
+	if err != nil {
+		return err
+	}
 	return validate.Struct(s)
 }
+

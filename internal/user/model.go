@@ -1,7 +1,11 @@
-package models
+package user
 
 import (
 	"time"
+
+	"api-gateway/internal/profile"
+	"api-gateway/internal/rbac"
+	"api-gateway/internal/tenant"
 
 	"github.com/google/uuid"
 )
@@ -21,9 +25,9 @@ type User struct {
 	DeletedAt     *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
 
 	// Relationships (not stored directly on the users row; populated via JOIN).
-	Tenant  *Tenant  `json:"tenant,omitempty" db:"-"`
-	Role    *Role    `json:"role,omitempty" db:"-"`
-	Profile *Profile `json:"profile,omitempty" db:"-"`
+	Tenant  *tenant.Tenant  `json:"tenant,omitempty" db:"-"`
+	Role    *rbac.Role    `json:"role,omitempty" db:"-"`
+	Profile *profile.Profile `json:"profile,omitempty" db:"-"`
 }
 
 // TableName returns the database table name for User.

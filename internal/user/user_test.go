@@ -1,16 +1,24 @@
-package models
+package user_test
 
 import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"api-gateway/internal/rbac"
+	"api-gateway/internal/testfixtures"
+	"api-gateway/internal/user"
 )
 
-func TestUser_PasswordHashNeverSerialized(t *testing.T) {
-	user := validUser()
-	user.PasswordHash = "super-secret-hash"
+func validUser() user.User {
+	return testfixtures.NewValidUser()
+}
 
-	data, err := json.Marshal(&user)
+func TestUser_PasswordHashNeverSerialized(t *testing.T) {
+	u := validUser()
+	u.PasswordHash = "super-secret-hash"
+
+	data, err := json.Marshal(&u)
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
@@ -24,9 +32,9 @@ func TestUser_PasswordHashNeverSerialized(t *testing.T) {
 }
 
 func TestUser_RelationshipsOmittedWhenNil(t *testing.T) {
-	user := validUser()
+	u := validUser()
 
-	data, err := json.Marshal(&user)
+	data, err := json.Marshal(&u)
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
@@ -39,16 +47,16 @@ func TestUser_RelationshipsOmittedWhenNil(t *testing.T) {
 }
 
 func TestUser_RelationshipsPopulatedWhenSet(t *testing.T) {
-	user := validUser()
-	tenant := validTenant()
-	role := Role{Name: "admin", DisplayName: "Administrator", Description: "Full access"}
-	profile := validProfile()
+	u := validUser()
+	tenant := testfixtures.NewValidTenant()
+	role := rbac.Role{Name: "admin", DisplayName: "Administrator", Description: "Full access"}
+	profile := testfixtures.NewValidProfile()
 
-	user.Tenant = &tenant
-	user.Role = &role
-	user.Profile = &profile
+	u.Tenant = &tenant
+	u.Role = &role
+	u.Profile = &profile
 
-	data, err := json.Marshal(&user)
+	data, err := json.Marshal(&u)
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
