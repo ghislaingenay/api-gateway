@@ -18,7 +18,7 @@ func RequirePermission(permission string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims, ok := ClaimsFromContext(r.Context())
-			if !ok {
+			if !ok || claims == nil {
 				writeUnauthorized(w)
 				return
 			}
@@ -42,7 +42,7 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims, ok := ClaimsFromContext(r.Context())
-			if !ok {
+			if !ok || claims == nil {
 				writeUnauthorized(w)
 				return
 			}

@@ -57,6 +57,7 @@ func TestRequirePermission(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -133,6 +134,7 @@ func TestRequireRole(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -157,6 +159,50 @@ func TestRequireRole(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRequirePermission_TypedNilClaims covers a typed-nil *CustomClaims
+// stored in context (e.g. WithClaims(ctx, nil)): ClaimsFromContext's type
+// assertion succeeds with ok=true, so the nil case must be checked
+// explicitly to avoid a nil-pointer dereference on claims.Permissions.
+func TestRequirePermission_TypedNilClaims(t *testing.T) {
+	t.Parallel()
+
+	handler := RequirePermission("roles:read")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithClaims(req.Context(), nil))
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d (body: %s)", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	assertJSONBody(t, rec.Body.Bytes(), map[string]string{"error": "unauthorized", "message": "invalid or missing token"})
+}
+
+// TestRequireRole_TypedNilClaims mirrors TestRequirePermission_TypedNilClaims
+// for RequireRole.
+func TestRequireRole_TypedNilClaims(t *testing.T) {
+	t.Parallel()
+
+	handler := RequireRole("admin")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(WithClaims(req.Context(), nil))
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d (body: %s)", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	assertJSONBody(t, rec.Body.Bytes(), map[string]string{"error": "unauthorized", "message": "invalid or missing token"})
 }
 
 // TestRequireRoleThenRequirePermission covers the edge case of a route
