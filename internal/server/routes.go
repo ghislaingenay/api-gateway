@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+
+	"api-gateway/internal/auth"
+	"api-gateway/internal/rbac"
 )
 
 func (s *Server) RegisterRoutes() http.Handler {
@@ -14,8 +17,18 @@ func (s *Server) RegisterRoutes() http.Handler {
 
 	mux.HandleFunc("/health", s.healthHandler)
 
+	mux.Handle("GET /roles", s.requirePermission("roles:read", rbac.RolesHandler(s.roleCache)))
+	mux.Handle("GET /permissions", s.requirePermission("roles:read", rbac.PermissionsHandler(s.roleCache)))
+
 	// Wrap the mux with CORS middleware
 	return s.corsMiddleware(mux)
+}
+
+// requirePermission wraps a handler with JWT authentication and a permission
+// check, so only callers with a valid token carrying the given permission
+// can reach it.
+func (s *Server) requirePermission(permission string, next http.HandlerFunc) http.Handler {
+	return auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(auth.RequirePermission(permission)(next))
 }
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {

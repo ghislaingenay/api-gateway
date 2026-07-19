@@ -1,10 +1,10 @@
 # TD-002: RBAC Data Model (Roles & Permissions)
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-17
+Last Updated: 2026-07-19
 
 Feature Spec: [FEAT-002 - RBAC Data Model (Roles & Permissions)](../features/FEAT-002-rbac-data-model.md)
 
@@ -41,9 +41,9 @@ Goose Migration (permissions only; roles table already exists from FEAT-000)
 PostgreSQL (roles [existing], permissions [new] tables)
 │
 ▼ (loaded at startup)
-In-Memory RoleStore (map[string]Role)
+RoleCache (interface; in-memory map[string]Role, constructor-injected — not a global)
 │
-▼
+▼ (injected into)
 GET /roles, GET /permissions handlers
 ```
 
@@ -55,8 +55,8 @@ GET /roles, GET /permissions handlers
 
 - Goose migration file: `NNN_create_permissions.sql` (permissions table + seed data only — `roles` already exists from FEAT-000)
 - `models.Permission` (per project overview Go data models; `models.Role` already exists from FEAT-000)
-- `store.RoleStore` — loads roles/permissions into memory at startup, exposes `GetRole(name string) (*Role, bool)`
-- `handlers.RolesHandler`, `handlers.PermissionsHandler`
+- `auth.RoleCache` — interface exposing `GetRole(name string) (*Role, bool)` and `All() []Role`; unexported concrete impl loads roles/permissions from PostgreSQL into memory once, via `NewRoleCache(db database.Service) (RoleCache, error)` which returns the interface (same shape as `auth.KeyStore`/`NewKeyStore`, TD-001). No package-level/global instance — `main.go` constructs it once and passes it in.
+- `handlers.RolesHandler(roles auth.RoleCache) http.HandlerFunc`, `handlers.PermissionsHandler(roles auth.RoleCache) http.HandlerFunc` — dependency injected via constructor parameter, not resolved from a global.
 
 ## Modified Components
 
@@ -141,7 +141,7 @@ None.
 ```
 Startup
 │
-Load roles + permissions from PostgreSQL into RoleStore
+main.go builds RoleCache via NewRoleCache(db) → injects into handlers
 │
 Request → GET /roles
 │
@@ -149,7 +149,7 @@ JWT Validation (TD-001)
 │
 Permission Check: roles:read (TD-003)
 │
-RoleStore.All() → JSON response
+RolesHandler's injected RoleCache.All() → JSON response
 ```
 
 ---
@@ -194,7 +194,7 @@ Full in-memory cache of roles/permissions, refreshed on startup. TODO: define re
 
 ## Metrics
 
-- `role_store_load_duration_seconds`
+- `role_cache_load_duration_seconds`
 - `roles_endpoint_requests_total`
 
 ## Logging
@@ -230,7 +230,7 @@ Mitigation: MVP treats roles as immutable/system-defined, restart required for c
 ## Deployment
 
 1. Run Goose migration to create and seed the `permissions` table (`roles` already exists from FEAT-000)
-2. Deploy gateway; RoleStore loads at startup
+2. Deploy gateway; `main.go` constructs `RoleCache` via `NewRoleCache(db)` at startup and injects it into the handlers
 3. Verify `GET /roles` returns expected seed data
 
 ## Rollback

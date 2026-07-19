@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"sync"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -45,21 +46,22 @@ var (
 	schema     = appConfig.DBSchema
 	sslMode    = appConfig.DBSSLMode
 	dbInstance *service
-)
+	once			 sync.Once
+) 
 
 func New() Service {
 	// Reuse Connection
-	if dbInstance != nil {
-		return dbInstance
-	}
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s&search_path=%s", username, password, host, port, database, sslMode, schema)
-	db, err := sql.Open("pgx", connStr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	dbInstance = &service{
-		db: db,
-	}
+	once.Do(func() {
+    connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s&search_path=%s", username, password, host, port, database, sslMode, schema)
+    db, err := sql.Open("pgx", connStr)
+    if err != nil {
+      log.Fatal(err)
+    }
+    
+    dbInstance = &service{
+      db: db,
+    }
+  })
 	return dbInstance
 }
 
