@@ -1,10 +1,10 @@
 # TD-003: Authorization Enforcement (Middleware)
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-19
 
 Feature Spec: [FEAT-003 - Authorization Enforcement (Middleware)](../features/FEAT-003-authorization-enforcement.md)
 
