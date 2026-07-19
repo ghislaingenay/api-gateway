@@ -52,6 +52,7 @@ func NewRoleCache(ctx context.Context, db database.Service) (RoleCache, error) {
 		byName[roles[i].Name] = &roles[i]
 	}
 
+	log.Printf("rbac: loaded %d roles, %d permissions", len(roles), len(permissions))
 	return &roleCache{roles: roles, byName: byName, permissions: permissions}, nil
 }
 

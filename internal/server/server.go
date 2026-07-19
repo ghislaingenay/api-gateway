@@ -29,7 +29,10 @@ func NewServer(db *sql.DB) *http.Server {
 	port, _ := strconv.Atoi(os.Getenv("PORT"))
 	dbService := database.New()
 
-	roleCache, err := rbac.NewRoleCache(context.Background(), dbService)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	roleCache, err := rbac.NewRoleCache(ctx, dbService)
 	if err != nil {
 		log.Fatalf("failed to load role cache: %v", err)
 	}
