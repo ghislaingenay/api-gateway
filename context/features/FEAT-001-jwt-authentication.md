@@ -1,10 +1,10 @@
 # FEAT-001: JWT Authentication (CBAC)
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-19
 
 Technical Design: [TD-001 - JWT Authentication (CBAC)](../technical-designs/TD-001-jwt-authentication.md)
 
@@ -80,9 +80,9 @@ The gateway must validate the JWT signature against an explicit algorithm allowl
 
 #### Acceptance Criteria
 
-- [ ] Tokens with `alg=none` are rejected with 401
-- [ ] Tokens signed with an algorithm outside the allowlist are rejected with 401
-- [ ] Tokens with invalid or missing signature are rejected with 401
+- [x] Tokens with `alg=none` are rejected with 401
+- [x] Tokens signed with an algorithm outside the allowlist are rejected with 401
+- [x] Tokens with invalid or missing signature are rejected with 401
 
 ---
 
@@ -92,9 +92,9 @@ The gateway must extract `tenant_id`, `user_id`, `role`, `role_id`, `permissions
 
 #### Acceptance Criteria
 
-- [ ] Valid token populates request context with `CustomClaims`
-- [ ] Missing required claims (`tenant_id`, `user_id`) result in 401
-- [ ] Expired (`exp`) or not-yet-valid (`nbf`) tokens are rejected with 401
+- [x] Valid token populates request context with `CustomClaims`
+- [x] Missing required claims (`tenant_id`, `user_id`) result in 401
+- [x] Expired (`exp`) or not-yet-valid (`nbf`) tokens are rejected with 401
 
 ---
 
@@ -104,8 +104,8 @@ The gateway must support multiple active signing keys identified by `kid` to all
 
 #### Acceptance Criteria
 
-- [ ] Tokens signed with any currently active key are accepted
-- [ ] Unknown `kid` values are rejected with 401
+- [x] Tokens signed with any currently active key are accepted
+- [x] Unknown `kid` values are rejected with 401
 
 ---
 

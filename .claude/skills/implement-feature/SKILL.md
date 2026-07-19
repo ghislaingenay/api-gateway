@@ -52,11 +52,6 @@ Status is `Draft` and ask them to pick one.
    - Respect migration ordering called out in the TD's "Dependencies" or
      "Sequence Flow" sections (e.g. TD-000 requires TD-002's `roles` table to
      exist before the `users` migration runs).
-   - Follow `context/coding-standards.md`: Clean Architecture layering
-     (handlers → services → repositories → domain models), interface-driven
-     design with constructor-based dependency injection, explicit wrapped
-     errors (`fmt.Errorf("context: %w", err)`), no global state, table-driven
-     tests for every exported function.
    - Match existing project layout: `cmd/` entrypoints, `internal/` core logic,
      migrations via Goose, config in `config/`.
    - Implement every Acceptance Criteria checkbox under each FR in the feature
@@ -65,46 +60,104 @@ Status is `Draft` and ask them to pick one.
    - Make minimal, focused changes. Don't refactor unrelated code and don't add
      functionality beyond the FRs and their acceptance criteria.
 
+   Follow `context/coding-standards.md` in full, not just Clean Architecture
+   layering — check each of these explicitly before considering a file done:
+   - **Package organization**: organize by business domain (`internal/tenant/`,
+     `internal/apikey/`), not by technical layer (`internal/handlers/`,
+     `internal/services/`). Never add to or create generic `models`, `utils`,
+     `helpers`, or `common` packages. A new domain package gets the standard
+     shape: `model.go`, `dto.go`, `repository.go`, `service.go`, `handler.go`,
+     `errors.go`.
+   - **Models vs DTOs**: domain models live in the owning package and are never
+     returned directly from handlers. Request/response types are separate DTOs
+     in `dto.go` with their own `json`/`validate` tags — never expose a DB
+     entity through an API response.
+   - **Validation**: `validate` tags go on DTOs/domain models; any custom
+     validator implementation belongs in `internal/validation/`, registered
+     centrally at startup, not inline in a handler. Handlers validate input
+     before calling a service — services must not re-parse raw request bodies.
+   - **Errors**: define sentinel errors (`var ErrXNotFound = errors.New(...)`)
+     or custom error structs in the owning package's `errors.go`, never a
+     global errors package. Wrap with `fmt.Errorf("context: %w", err)` at every
+     boundary crossing; callers branch with `errors.Is`/`errors.As`. Never
+     panic for expected failure paths.
+   - **Constructors and startup**: constructors return `(T, error)`, not a bare
+     value plus a panic. Only use `panic` for unrecoverable startup failure or
+     programmer error, and only in functions explicitly prefixed `Must`
+     (`MustLoadConfig`, `MustConnectDatabase`) — never in request-path code.
+   - **Migrations**: never call migrations from production server startup
+     (`database.Migrate(db)` inside `cmd/server`). Migrations run as a separate
+     job/command (`cmd/migrate`); automatic migration-on-boot is acceptable
+     only behind a local-development-only flag.
+   - **Dependency injection**: interfaces are declared next to the consumer
+     that needs them (e.g. `TenantRepository` interface lives in the service
+     package, not the repository package), sized to just the methods that
+     consumer calls. Wire dependencies via constructor injection
+     (`NewService(repo TenantRepository, logger Logger) *Service`) — no service
+     locators, no package-level globals.
+   - **Layer boundaries**: handlers only parse/validate/call-service/respond —
+     no business logic, no DB access, no external calls in a handler. Services
+     hold business rules and orchestrate repositories; they must not contain
+     HTTP concerns (`http.Request`, status codes). Repositories only do
+     persistence and return domain entities — no business rules in SQL-adjacent
+     code.
+   - **Go idioms and net/http**: use Go 1.22+ `net/http.ServeMux` routing with
+     method+pattern registration; explicit method handling per verb; context
+     propagation (`context.Context` as first param) through service and
+     repository calls for cancellation/deadlines; guard any shared mutable
+     state with a mutex or channel rather than reaching for global state;
+     `defer` resource cleanup (rows, tx, file handles) right after acquisition.
+   - Leave no `TODO`, placeholder, or stubbed branch in the implementation —
+     every code path the AC/TD requires must be real.
+
 5. **Test.**
-   - Run `go build ./...` and `go vet ./...`; fix any errors before proceeding.
-   - Run `go test ./...` for the affected packages. Add table-driven tests
-     covering the feature's "Edge Cases" section.
+   - Run `gofmt -l .` (or `goimports -l .`) and fix any unformatted files, then
+     `go vet ./...` and `go build ./...`; fix all errors before proceeding. Run
+     `golangci-lint run` if the repo has it configured.
+   - Run `go test ./...` for the affected packages. Add table-driven tests,
+     run with `t.Parallel()` where the test is independent, covering the
+     feature's "Edge Cases" section and every exported function touched.
+   - Confirm mocks for external interfaces (repositories, clients) are used in
+     service-layer unit tests instead of hitting real infrastructure; keep
+     slower integration tests separate per `context/coding-standards.md`.
    - If the feature touches an HTTP surface, verify it manually (e.g. `curl`)
      per `context/ai-interaction.md`'s workflow before declaring it done.
 
-6. **Verify with an independent subagent before declaring anything done.**
-   - Spawn an `Explore`-or-general-purpose subagent via the Agent tool (run it
-     in the foreground — its findings gate the next step) with a self-contained
-     prompt that:
-     - Points it at the feature file and TD file paths (don't paraphrase their
-       content — the subagent has no memory of this conversation, so tell it to
-       read the docs itself).
-     - Points it at what changed: the branch name and `git diff <base>...HEAD`
-       (or the specific files touched), not a summary of your intentions.
-     - Asks it to check, independently: every Acceptance Criteria checkbox
-       against the actual code, the TD's Data Model/Components/API Design
-       sections against what was built, the feature's Business Rules and Edge
-       Cases against what's enforced, and Non-Goals against scope creep.
-     - Asks it to run `go build ./...`, `go vet ./...`, and `go test ./...` and
-       report failures.
-     - Asks for a severity-ranked list back (Blocking / Should-fix / Note) with
-       file:line evidence — not a pass/fail opinion.
-   - This subagent step is the same verification method as the
-     `review-technical-design` skill; reuse that skill's dimensions if invoked
-     separately later, but here it runs automatically as part of implementation.
-   - If the subagent reports Blocking findings, fix them and re-run the
-     verification subagent before continuing. Don't self-certify — a fresh
-     subagent with no stake in the implementation is the check, not your own
-     read of the diff.
+6. **Verify by invoking the `review-technical-design` skill before declaring
+   anything done — do not write your own ad-hoc verification prompt here.**
+   - Call the Skill tool with `skill: review-technical-design` and
+     `args: <the same feature id/slug you resolved in step 1>`.
+   - That skill is the single source of truth for verification: it reads the
+     FEAT/TD docs itself, diffs against the base branch, checks data model
+     fidelity, API contract, acceptance criteria, business rules/edge cases,
+     non-goals, security mitigations, coding standards, and runs
+     `go build`/`go vet`/`go test` — then reports a severity-ranked list
+     (Blocking / Should-fix / Note) with file:line evidence.
+   - Run it as its own step, not folded into your implementation context —
+     treat its findings the same way you would an independent subagent's:
+     don't self-certify, and don't let your own read of the diff override it.
+   - **Stop it short of closeout.** `review-technical-design`'s step 7 (setting
+     Status to `Done` and resetting `context/current-feature.md`) is out of
+     scope here — this skill owns the Doing→Done handoff to the user (see
+     step 7 below). When invoking it mid-implementation, tell it explicitly:
+     only run its verification and reporting steps (1–6); do not close out the
+     feature.
+   - If it reports Blocking findings, fix them and re-invoke the skill before
+     continuing — a fresh, independent verification pass is the check, not
+     your own judgment that the fix is correct.
 
 7. **Update checkboxes and status once the subagent verification is clean.**
    - Check off each satisfied Acceptance Criteria box in the feature file.
    - Check off each goal in `context/current-feature.md`.
    - Leave the feature's Status as `Doing` — do NOT set it to `Done` yourself.
-     Report to the user what was implemented, the subagent's verification
+     Report to the user what was implemented, the `review-technical-design`
      findings (including any Should-fix/Note items left open), and any Open
      Questions from the TD that still need a human decision. Let the user
      confirm completion and flip the status to `Done`/`Review` themselves.
+   - `review-technical-design` checks spec fidelity (does the code match the
+     TD/FEAT), not general code quality. In the same report, suggest the user
+     run `/code-review` if they also want a correctness/simplification/
+     efficiency pass — don't run it automatically here.
 
 8. **Do not commit or merge without explicit permission** — `context/ai-interaction.md`
    requires asking first, and commits must use conventional prefixes restricted to

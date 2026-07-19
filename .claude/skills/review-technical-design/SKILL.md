@@ -54,10 +54,46 @@ is `Doing` in `context/features/README.md` as candidates.
    - **Security & risk mitigations**: check the TD's "Security" and "Risks →
      Mitigation" sections were actually built in (e.g. `password_hash` tagged
      `json:"-"`, tenant-scoping on queries, mitigations for named risks).
-   - **Coding standards**: spot-check against `context/coding-standards.md`
-     (Clean Architecture layering, wrapped errors, no global state, table-driven
-     tests, no secrets/plaintext leakage) — note violations but weight them
-     below functional correctness.
+   - **Coding standards & Go best practices**: read `context/coding-standards.md`
+     in full and check every changed file against it, not just a spot-check —
+     note violations but weight them below functional correctness:
+     - **Architecture**: Clean Architecture layering respected (handlers only
+       parse/validate/call-service/respond; services hold business rules with
+       no HTTP concerns; repositories only persist, no business logic);
+       package-by-domain, not package-by-layer; no new/expanded `models`,
+       `utils`, `helpers`, or `common` packages.
+     - **Errors**: every error checked and handled explicitly; wrapped with
+       `fmt.Errorf("context: %w", err)` at boundary crossings; callers branch
+       with `errors.Is`/`errors.As`; sentinel/custom errors defined in the
+       owning package, not a global errors package; no `panic` outside
+       `Must`-prefixed startup functions; no swallowed (`_ = err`) errors on a
+       path that can actually fail.
+     - **Interfaces & DI**: public functions accept interfaces, not concrete
+       types, where a consumer needs substitutability; interfaces declared next
+       to the consumer, sized to only the methods it calls; dependencies wired
+       via constructor injection — no service locators, no package-level
+       mutable globals.
+     - **Concurrency**: any goroutine has a clear owner/lifecycle and exits
+       cleanly on `context.Context` cancellation; shared mutable state guarded
+       by a mutex or channel; no unbounded goroutine spawning per-request
+       without a cap/pool.
+     - **Context propagation**: `context.Context` is the first parameter and is
+       actually threaded through service/repository/external calls, not
+       dropped or replaced with `context.Background()` mid-chain.
+     - **Resource handling**: `defer` used to close rows/files/connections/tx
+       right after acquisition; no leaked handles on early-return error paths.
+     - **Idiomatic Go**: short, single-responsibility functions; naming follows
+       Go conventions (MixedCaps, no stutter like `user.UserID`); no
+       unnecessary allocations or premature optimization; `net/http.ServeMux`
+       method+pattern routing per Go 1.22+ conventions; exported
+       functions/types have GoDoc-style comments.
+     - **Tooling**: `gofmt -l .` / `goimports -l .` clean, `go vet ./...`
+       clean, and `golangci-lint run` clean if the repo has it configured —
+       run these, don't assume.
+     - **Security-adjacent Go patterns**: no plaintext secrets in structs sent
+       over the wire (`json:"-"` on sensitive fields), input validation before
+       a service touches raw request data, no SQL built via string
+       concatenation (parameterized queries only).
    - **Tests**: confirm tests exist for the acceptance criteria and edge cases,
      and that `go build ./...`, `go vet ./...`, and `go test ./...` pass. Run
      them.
@@ -79,11 +115,38 @@ is `Doing` in `context/features/README.md` as candidates.
 6. **Only after reporting**, if the user asks you to fix findings, do so as a
    separate step — re-verify afterward rather than assuming the fix is correct.
 
-7. **If everything blocking and should-fix is resolved**, offer to flip the
-   feature's Status to `Done` in `context/features/README.md`, the feature file,
-   the TD's `README.md` row, and the TD file header — but only with the user's
-   confirmation, and only after re-running build/vet/test to confirm the final
-   state is green.
+7. **If everything blocking and should-fix is resolved**, offer to close out the
+   feature — but only with the user's confirmation, and only after re-running
+   build/vet/test to confirm the final state is green. Closing out means all of:
+   - Set Status to `Done` in `context/features/README.md`'s row for this
+     feature, and in the `Status:` line inside the feature file itself. Update
+     the feature file's `Last Updated:` to today's date.
+   - Set Status to `Done` in `context/technical-designs/README.md`'s row for
+     the paired TD, and in the TD file's own header `Status:` line if present.
+     Update its `Last Updated:` too.
+   - Reset `context/current-feature.md` back to its placeholder state (below)
+     — it tracks the single feature currently in progress, so once this one is
+     `Done` it must not keep pointing at it.
+
+   Placeholder content for `context/current-feature.md`:
+
+   ```markdown
+   # Current Feature
+
+   _No feature currently in progress._
+
+   ## File
+
+   _(link to context/features/FEAT-NNN-*.md once one is picked up)_
+
+   ## Goals
+
+   _(populated from the feature's Functional Requirements when work starts)_
+
+   ## Notes
+
+   _(short summary populated when work starts)_
+   ```
 
 ## Notes
 
@@ -95,3 +158,7 @@ is `Doing` in `context/features/README.md` as candidates.
   it as a finding so the user can confirm the decision was intentional.
 - Never commit, push, or change Status to `Done` without explicit user
   confirmation, per `context/ai-interaction.md`.
+- Only reset `context/current-feature.md` if its `## File` link actually points
+  at the feature being closed out — if it's already tracking a different
+  feature (someone moved on before this review ran), leave it alone and just
+  flag the mismatch to the user.
