@@ -24,6 +24,13 @@ type staticKeyStore struct {
 // NewKeyStore builds a KeyStore from the configured signing keys. Each entry
 // in cfg.SigningKeys must be a base64-encoded PEM-encoded RSA public key.
 func NewKeyStore(cfg *config.JWTConfig) (KeyStore, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("jwt config is nil")
+	}
+	if len(cfg.SigningKeys) == 0 {
+		return nil, fmt.Errorf("no signing keys configured")
+	}
+
 	keys := make(map[string]*rsa.PublicKey, len(cfg.SigningKeys))
 	for kid, encoded := range cfg.SigningKeys {
 		pemBytes, err := base64.StdEncoding.DecodeString(encoded)
