@@ -1,10 +1,10 @@
 # FEAT-002: RBAC Data Model (Roles & Permissions)
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-17
+Last Updated: 2026-07-19
 
 Technical Design: [TD-002 - RBAC Data Model (Roles & Permissions)](../technical-designs/TD-002-rbac-data-model.md)
 
@@ -81,9 +81,9 @@ The system must persist a `permissions` table per the schema in the project over
 
 #### Acceptance Criteria
 
-- [ ] Migration creates `permissions` table with defined indexes (`roles` already exists from FEAT-000 — do not re-create it)
-- [ ] Migration seeds all permissions listed in the permission matrix
-- [ ] Attempting to delete a system role is rejected
+- [x] Migration creates `permissions` table with defined indexes (`roles` already exists from FEAT-000 — do not re-create it)
+- [x] Migration seeds all permissions listed in the permission matrix
+- [ ] Attempting to delete a system role is rejected (deferred — no role-mutation surface exists yet; revisit once a delete/mutation endpoint is built)
 
 ---
 
@@ -93,8 +93,8 @@ The system must expose a `GET /roles` endpoint returning all roles with their pe
 
 #### Acceptance Criteria
 
-- [ ] Returns 200 with role list for authorized callers
-- [ ] Returns 403 for callers lacking `roles:read`
+- [x] Returns 200 with role list for authorized callers
+- [x] Returns 403 for callers lacking `roles:read`
 
 ---
 
@@ -104,7 +104,7 @@ The system must expose a `GET /permissions` endpoint returning all available per
 
 #### Acceptance Criteria
 
-- [ ] Returns 200 with permission list for authorized callers
+- [x] Returns 200 with permission list for authorized callers
 - [ ] Permissions grouped or filterable by `resource` (TODO: confirm exact filtering/query params — not specified in overview)
 
 ---
