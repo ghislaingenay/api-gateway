@@ -1,10 +1,10 @@
 # TD-001: JWT Authentication (CBAC)
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-19
 
 Feature Spec: [FEAT-001 - JWT Authentication (CBAC)](../features/FEAT-001-jwt-authentication.md)
 
@@ -208,8 +208,16 @@ Mitigation: support multiple simultaneously active keys keyed by `kid`; grace pe
 
 # 12. Open Questions
 
-- Is JWT blacklist (revocation) in MVP scope, or deferred entirely?
-- What is the key storage mechanism (env var, file, KMS)?
+- ~~Is JWT blacklist (revocation) in MVP scope, or deferred entirely?~~
+  Resolved 2026-07-19: out of scope for this pass. Not listed under FEAT-001's
+  Functional Requirements/Acceptance Criteria, only mentioned as a TODO in the
+  Redis Keys section; consistent with the Non-Goals excluding refresh tokens
+  and full OAuth2.
+- ~~What is the key storage mechanism (env var, file, KMS)?~~
+  Resolved 2026-07-19: env-var/config-based. `config.LoadJWTConfig` reads
+  `JWT_ALLOWED_ALGORITHMS` and `JWT_SIGNING_KEYS` (kid=base64-PEM pairs) from
+  the environment; `auth.NewKeyStore` parses them into RSA public keys. No
+  KMS/JWKS integration for MVP.
 
 ---
 
