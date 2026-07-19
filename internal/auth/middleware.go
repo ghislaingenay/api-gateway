@@ -61,8 +61,10 @@ func bearerToken(r *http.Request) (string, error) {
 func writeUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"error":   "unauthorized",
 		"message": "invalid or missing token",
-	})
+	}); err != nil {
+		log.Printf("failed to write unauthorized response: %v", err)
+	}
 }
