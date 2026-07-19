@@ -40,7 +40,7 @@ func LoadJWTConfig() *JWTConfig {
 		}
 	}
 	
-	for _, pair := range strings.Split(os.Getenv("JWT_SIGNING_KEYS"), ",") {
+	for _, pair := range strings.Split(jwtSigningKeys, ",") {
 		kid, key, found := strings.Cut(pair, "=")
 		kid, key = strings.TrimSpace(kid), strings.TrimSpace(key)
 		if !found || kid == "" || key == "" {
