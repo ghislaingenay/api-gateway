@@ -33,7 +33,7 @@ func mustStartMigratedPostgres(t *testing.T) database.Service {
 	ctx := context.Background()
 	container, err := postgres.Run(
 		ctx,
-		"postgres:latest",
+		"postgres:16-alpine",
 		postgres.WithDatabase("database"),
 		postgres.WithUsername("user"),
 		postgres.WithPassword("password"),
