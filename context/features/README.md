@@ -5,7 +5,7 @@
 | FEAT-000 | [Core Identity Data Model (Users, Profiles & Tenants)](FEAT-000-core-identity-data-model.md) | Done   | [TD-000](../technical-designs/TD-000-core-identity-data-model.md)    |
 | FEAT-001 | [JWT Authentication (CBAC)](FEAT-001-jwt-authentication.md)                                  | Done   | [TD-001](../technical-designs/TD-001-jwt-authentication.md)          |
 | FEAT-002 | [RBAC Data Model](FEAT-002-rbac-data-model.md)                                               | Done   | [TD-002](../technical-designs/TD-002-rbac-data-model.md)             |
-| FEAT-003 | [Authorization Enforcement](FEAT-003-authorization-enforcement.md)                           | Draft  | [TD-003](../technical-designs/TD-003-authorization-enforcement.md)   |
+| FEAT-003 | [Authorization Enforcement](FEAT-003-authorization-enforcement.md)                           | Done   | [TD-003](../technical-designs/TD-003-authorization-enforcement.md)   |
 | FEAT-004 | [Multi-Tenant Isolation & Routing](FEAT-004-multi-tenant-routing.md)                         | Draft  | [TD-004](../technical-designs/TD-004-multi-tenant-routing.md)        |
 | FEAT-005 | [Distributed Rate Limiting](FEAT-005-distributed-rate-limiting.md)                           | Draft  | [TD-005](../technical-designs/TD-005-distributed-rate-limiting.md)   |
 | FEAT-006 | [Response Caching](FEAT-006-response-caching.md)                                             | Draft  | [TD-006](../technical-designs/TD-006-response-caching.md)            |

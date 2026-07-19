@@ -1,10 +1,10 @@
 # FEAT-003: Authorization Enforcement (Middleware)
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-19
 
 Technical Design: [TD-003 - Authorization Enforcement (Middleware)](../technical-designs/TD-003-authorization-enforcement.md)
 
@@ -79,9 +79,9 @@ So that I can audit access attempts for compliance
 
 #### Acceptance Criteria
 
-- [ ] Request with required permission proceeds to next handler
-- [ ] Request without required permission returns 403 with `{"error":"forbidden","message":"insufficient permissions"}`
-- [ ] Denial is logged with correlation ID, tenant ID, user ID, and requested permission
+- [x] Request with required permission proceeds to next handler
+- [x] Request without required permission returns 403 with `{"error":"forbidden","message":"insufficient permissions"}`
+- [x] Denial is logged with tenant ID, user ID, and requested permission (correlation ID deferred to FEAT-009 — not yet implemented in this codebase; see current-feature.md Notes)
 
 ---
 
@@ -91,8 +91,8 @@ So that I can audit access attempts for compliance
 
 #### Acceptance Criteria
 
-- [ ] Request with matching role proceeds
-- [ ] Request without matching role returns 403 with `{"error":"forbidden","message":"insufficient role"}`
+- [x] Request with matching role proceeds
+- [x] Request without matching role returns 403 with `{"error":"forbidden","message":"insufficient role"}`
 
 ---
 
@@ -102,8 +102,8 @@ Authorization middleware must run only after JWT validation ([[FEAT-001]]) has p
 
 #### Acceptance Criteria
 
-- [ ] Missing claims in context results in 401, not a panic or 403
-- [ ] Middleware order is enforced at router configuration time
+- [x] Missing claims in context results in 401, not a panic or 403
+- [x] Middleware order is enforced at router configuration time (existing `requirePermission` router helper composes JWTAuthMiddleware+RequirePermission; a matching `requireRole` helper should be added when the first role-gated route lands)
 
 ---
 
