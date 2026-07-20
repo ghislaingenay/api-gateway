@@ -1,6 +1,6 @@
 # TD-005: Distributed Rate Limiting
 
-Status: Doing
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
@@ -150,7 +150,9 @@ This is the rate limiting component.
 
 ## Expected Load
 
-Every proxied request performs one Redis round-trip (INCR + read).
+Every proxied request performs two Redis round-trips (one `EVAL` — INCR +
+read — per window: per-minute and per-hour are enforced independently per
+FR-2, so they cannot share a single round-trip).
 
 ## Database Impact
 
