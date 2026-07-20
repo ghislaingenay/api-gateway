@@ -59,8 +59,8 @@ func (c *redisStatusCache) IsActive(ctx context.Context, tenantID uuid.UUID) (bo
 	if err == nil {
 		return cached == statusActive, nil
 	}
-	if !errors.Is(err, redis.Nil) {
-		return false, fmt.Errorf("read tenant status cache: %w", err)
+	if err != nil && !errors.Is(err, redis.Nil) {
+		// Best-effort cache: fall back to repo on Redis errors.
 	}
 
 	t, err := c.repo.GetByID(ctx, tenantID)
