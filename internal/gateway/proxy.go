@@ -47,7 +47,9 @@ func (p *reverseProxier) proxyFor(upstream string) (*httputil.ReverseProxy, erro
 	if err != nil {
 		return nil, fmt.Errorf("parse upstream url %q: %w", upstream, err)
 	}
-
+	if target.Scheme == "" || target.Host == "" {
+		return nil, fmt.Errorf("upstream url %q must include scheme and host", upstream)
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if proxy, ok := p.proxies[upstream]; ok {
