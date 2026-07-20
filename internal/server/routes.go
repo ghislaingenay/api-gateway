@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"api-gateway/internal/auth"
+	"api-gateway/internal/gateway"
 	"api-gateway/internal/rbac"
 )
 
@@ -19,6 +20,10 @@ func (s *Server) RegisterRoutes() http.Handler {
 
 	mux.Handle("GET /roles", s.requirePermission("roles:read", rbac.RolesHandler(s.roleCache)))
 	mux.Handle("GET /permissions", s.requirePermission("roles:read", rbac.PermissionsHandler(s.roleCache)))
+
+	mux.Handle("/api/", auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(
+		gateway.NewHandler(s.routeTable, s.tenantStatus, s.proxy),
+	))
 
 	// Wrap the mux with CORS middleware
 	return s.corsMiddleware(mux)

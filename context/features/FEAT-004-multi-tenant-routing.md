@@ -1,10 +1,10 @@
 # FEAT-004: Multi-Tenant Isolation & Routing
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-20
 
 Technical Design: [TD-004 - Multi-Tenant Isolation & Routing](../technical-designs/TD-004-multi-tenant-routing.md)
 
@@ -79,8 +79,8 @@ The gateway must extract `tenant_id` exclusively from validated JWT claims and m
 
 #### Acceptance Criteria
 
-- [ ] `tenant_id` used for routing/rate limiting/caching always comes from `claims.TenantID`
-- [ ] A request with a conflicting tenant header is either ignored or rejected (TODO: confirm reject-vs-ignore policy — not specified in overview)
+- [x] `tenant_id` used for routing/rate limiting/caching always comes from `claims.TenantID`
+- [x] A request with a conflicting tenant header is either ignored or rejected (resolved 2026-07-20: silently ignored/stripped, not rejected)
 
 ---
 
@@ -90,8 +90,8 @@ The gateway must route requests to downstream services based on a static path-to
 
 #### Acceptance Criteria
 
-- [ ] Configured routes (path, method, upstream URL) resolve to the correct downstream service
-- [ ] Unmatched paths return 404
+- [x] Configured routes (path, method, upstream URL) resolve to the correct downstream service
+- [x] Unmatched paths return 404
 
 ---
 
@@ -101,8 +101,8 @@ The gateway must reject requests for tenants where `is_active = false` or `delet
 
 #### Acceptance Criteria
 
-- [ ] Request for inactive tenant returns 403 with a clear error message
-- [ ] Tenant active-status check does not add more than one DB/cache lookup per request (cached)
+- [x] Request for inactive tenant returns 403 with a clear error message
+- [x] Tenant active-status check does not add more than one DB/cache lookup per request (cached)
 
 ---
 
@@ -112,8 +112,8 @@ The gateway must forward tenant context to downstream services via a trusted int
 
 #### Acceptance Criteria
 
-- [ ] Downstream services receive `tenant_id` without needing to parse the JWT themselves
-- [ ] Any client-supplied header with the same name is stripped before forwarding
+- [x] Downstream services receive `tenant_id` without needing to parse the JWT themselves
+- [x] Any client-supplied header with the same name is stripped before forwarding
 
 ---
 
