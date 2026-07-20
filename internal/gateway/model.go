@@ -1,6 +1,9 @@
 package gateway
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // Route is a single static path-to-service mapping used to resolve the
 // downstream upstream for an incoming request.
@@ -10,6 +13,9 @@ type Route struct {
 	Upstream            string
 	AuthRequired        bool
 	PermissionsRequired []string
+	// CacheTTL overrides the gateway's default response-cache TTL for this
+	// route (FEAT-006). Zero means "no override" — the default TTL applies.
+	CacheTTL time.Duration
 }
 
 // RouteTable resolves the destination Route for an incoming request from a

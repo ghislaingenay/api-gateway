@@ -54,10 +54,13 @@ func NewHandler(routes *RouteTable, statusChecker TenantStatusChecker, proxy Pro
 			return
 		}
 
-		route, ok := routes.Resolve(r.Method, r.URL.Path)
+		route, ok := RouteFromContext(r.Context())
 		if !ok {
-			writeError(w, http.StatusNotFound, "not_found", "no matching route")
-			return
+			route, ok = routes.Resolve(r.Method, r.URL.Path)
+			if !ok {
+				writeError(w, http.StatusNotFound, "not_found", "no matching route")
+				return
+			}
 		}
 
 		for _, header := range clientTenantHeaders {

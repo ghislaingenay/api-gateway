@@ -14,6 +14,9 @@ type RouteEntry struct {
 	Upstream            string   `json:"upstream"`
 	AuthRequired        bool     `json:"auth_required"`
 	PermissionsRequired []string `json:"permissions_required"`
+	// CacheTTLSeconds overrides the gateway's default response-cache TTL for
+	// this route (FEAT-006). Zero/omitted means "no override".
+	CacheTTLSeconds int `json:"cache_ttl_seconds"`
 }
 
 // LoadRoutesConfig reads the static route table from the JSON file at
@@ -32,6 +35,12 @@ func LoadRoutesConfig() ([]RouteEntry, error) {
 	var routes []RouteEntry
 	if err := json.Unmarshal(data, &routes); err != nil {
 		return nil, fmt.Errorf("parse routes config %q: %w", path, err)
+	}
+
+	for _, route := range routes {
+		if route.CacheTTLSeconds < 0 {
+			return nil, fmt.Errorf("route %s %s: cache_ttl_seconds must not be negative, got %d", route.Method, route.Path, route.CacheTTLSeconds)
+		}
 	}
 
 	return routes, nil
