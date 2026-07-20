@@ -61,7 +61,8 @@ func TestSlidingWindowLimiter_Allow(t *testing.T) {
 		},
 		{
 			name: "weighted previous bucket count pushes over limit",
-			// weighted count is 40 + 40*0.5 = 60, exactly at the limit: still allowed (<=).
+			// weight at 30s into a 60s bucket is 0.5, so weighted count is
+			// 41 (current) + 40*0.5 (previous) = 61, over the limit: denied.
 			store:      &fakeLimiterStore{val: []interface{}{int64(41), "40"}},
 			limit:      60,
 			wantAllow:  false,
