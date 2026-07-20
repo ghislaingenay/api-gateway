@@ -1,10 +1,10 @@
 # TD-005: Distributed Rate Limiting
 
-Status: Draft
+Status: Doing
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-20
 
 Feature Spec: [FEAT-005 - Distributed Rate Limiting](../features/FEAT-005-distributed-rate-limiting.md)
 
@@ -195,7 +195,7 @@ Mitigation: fail-open is an accepted tradeoff (availability > strict enforcement
 
 Sliding window boundary error (~0.003%) allowing minor over-limit bursts.
 
-Mitigation: documented, accepted tolerance per Cloudflare's published approach (ADR-005); not a correctness bug.
+Mitigation: documented, accepted tolerance per Cloudflare's published approach; not a correctness bug.
 
 ---
 
@@ -219,8 +219,3 @@ Mitigation: documented, accepted tolerance per Cloudflare's published approach (
 - Exact sliding window formula/library choice (custom implementation vs. existing Go library)
 
 ---
-
-# 13. ADR References
-
-- ADR-002: Redis for Distributed Rate Limiting and Caching
-- ADR-005: Sliding Window Algorithm for Rate Limiting

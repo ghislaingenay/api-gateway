@@ -1,10 +1,10 @@
 # FEAT-005: Distributed Rate Limiting
 
-Status: Draft
+Status: Doing
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-20
 
 Technical Design: [TD-005 - Distributed Rate Limiting](../technical-designs/TD-005-distributed-rate-limiting.md)
 
