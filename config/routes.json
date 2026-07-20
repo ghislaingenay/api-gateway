@@ -1,0 +1,16 @@
+[
+  {
+    "path": "/api/orders/*",
+    "method": "GET",
+    "upstream": "http://orders-service:8081",
+    "auth_required": true,
+    "permissions_required": ["orders:read"]
+  },
+  {
+    "path": "/api/orders",
+    "method": "POST",
+    "upstream": "http://orders-service:8081",
+    "auth_required": true,
+    "permissions_required": ["orders:create"]
+  }
+]

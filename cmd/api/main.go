@@ -63,7 +63,7 @@ func main() {
 	}
 
 	// 5. Pass the app instance to the server
-	server := server.NewServer(app.Db.GetDB())
+	server := server.NewServer(app.Db.GetDB(), app.Redis)
 
 	// Create a done channel to signal when the shutdown is complete
 	done := make(chan bool, 1)

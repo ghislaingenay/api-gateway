@@ -1,10 +1,10 @@
 # TD-004: Multi-Tenant Isolation & Routing
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-20
 
 Feature Spec: [FEAT-004 - Multi-Tenant Isolation & Routing](../features/FEAT-004-multi-tenant-routing.md)
 
@@ -211,8 +211,17 @@ Mitigation: short cache TTL bounds the staleness window; critical deactivations 
 
 # 12. Open Questions
 
-- Reject vs. silently ignore a conflicting client-supplied tenant header?
-- Tenant status cache TTL value?
+- ~~Reject vs. silently ignore a conflicting client-supplied tenant header?~~ Resolved 2026-07-20: silently strip, do not reject.
+- ~~Tenant status cache TTL value?~~ Resolved 2026-07-20: 30 seconds.
+
+---
+
+## Follow-ups (Deferred)
+
+- **`Route.AuthRequired` / `Route.PermissionsRequired` are declared but unenforced.** The route table schema (`internal/gateway/model.go`) and `config/routes.json` carry these fields per this TD's "New Components" section, but no code path reads them — every request under `/api/` is gated only by the blanket `auth.JWTAuthMiddleware` wrapping the whole prefix, regardless of a route's `AuthRequired` value, and `PermissionsRequired` is never checked against `claims.Permissions`. This wasn't in FEAT-004's acceptance criteria (FEAT-003's authorization middleware already runs upstream of routing), so it was left inert rather than half-built. Before either field is relied upon operationally, a future feature should:
+  - Decide whether per-route auth/permission gating belongs in the gateway routing layer at all, or stays owned entirely by FEAT-003's middleware.
+  - If it belongs here: enforce `PermissionsRequired` in `gateway.NewHandler` (`internal/gateway/handler.go`) using `claims.Permissions`, and support `AuthRequired: false` routes bypassing `auth.JWTAuthMiddleware` (would need the mux wiring in `internal/server/routes.go` to change from one blanket-authed `/api/` prefix to per-route registration).
+  - Otherwise: drop the fields from `Route`/`config.RouteEntry` to avoid the schema implying enforcement that doesn't exist.
 
 ---
 
