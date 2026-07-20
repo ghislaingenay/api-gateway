@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -148,8 +149,8 @@ func toInt64(v interface{}) (int64, bool) {
 	case int64:
 		return n, true
 	case string:
-		var parsed int64
-		if _, err := fmt.Sscanf(n, "%d", &parsed); err != nil {
+		parsed, err := strconv.ParseInt(n, 10, 64)
+		if err != nil {
 			return 0, false
 		}
 		return parsed, true
