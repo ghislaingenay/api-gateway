@@ -91,7 +91,7 @@ func TestRedisStatusCache_IsActive(t *testing.T) {
 		},
 		{
 			name:  "cache miss, tenant not found treated as inactive",
-			store: &fakeStatusCacheStore{getResult: redis.NewStringResult("", redis.Nil)},
+			store: &fakeStatusCacheStore{getResult: redis.NewStringResult("", redis.Nil), setResult: redis.NewStatusResult("OK", nil)},
 			repo: &fakeRepository{
 				err: ErrTenantNotFound,
 			},
@@ -107,9 +107,12 @@ func TestRedisStatusCache_IsActive(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "redis error propagates",
-			store:   &fakeStatusCacheStore{getResult: redis.NewStringResult("", errors.New("connection refused"))},
-			wantErr: true,
+			name:  "redis error falls back to repository (best-effort cache)",
+			store: &fakeStatusCacheStore{getResult: redis.NewStringResult("", errors.New("connection refused")), setResult: redis.NewStatusResult("OK", nil)},
+			repo: &fakeRepository{
+				tenant: &Tenant{ID: tenantID, IsActive: true},
+			},
+			wantActive: true,
 		},
 	}
 

@@ -55,13 +55,11 @@ func NewStatusCache(repo Repository, redisClient *redis.Client, ttl time.Duratio
 func (c *redisStatusCache) IsActive(ctx context.Context, tenantID uuid.UUID) (bool, error) {
 	key := statusCacheKeyPrefix + tenantID.String()
 
-	cached, err := c.redis.Get(ctx, key).Result()
-	if err == nil {
+	if cached, err := c.redis.Get(ctx, key).Result(); err == nil {
 		return cached == statusActive, nil
 	}
-	if err != nil && !errors.Is(err, redis.Nil) {
-		// Best-effort cache: fall back to repo on Redis errors.
-	}
+	// Cache miss or Redis error: best-effort cache, fall back to the
+	// database rather than failing the request when Redis is unavailable.
 
 	t, err := c.repo.GetByID(ctx, tenantID)
 	if err != nil {
