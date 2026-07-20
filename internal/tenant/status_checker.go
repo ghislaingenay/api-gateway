@@ -77,9 +77,7 @@ func (c *redisStatusCache) IsActive(ctx context.Context, tenantID uuid.UUID) (bo
 	if active {
 		value = statusActive
 	}
-	if err := c.redis.Set(ctx, key, value, c.ttl).Err(); err != nil {
-		return active, fmt.Errorf("write tenant status cache: %w", err)
-	}
+	_ = c.redis.Set(ctx, key, value, c.ttl).Err()
 
 	return active, nil
 }
