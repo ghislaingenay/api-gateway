@@ -3,6 +3,7 @@ package server
 import (
 	"api-gateway/config"
 	"api-gateway/internal/auth"
+	"api-gateway/internal/cache"
 	"api-gateway/internal/database"
 	"api-gateway/internal/gateway"
 	"api-gateway/internal/ratelimit"
@@ -23,17 +24,19 @@ import (
 )
 
 type Server struct {
-	port          int
-	db            database.Service
-	roleCache     rbac.RoleCache
-	keyStore      auth.KeyStore
-	jwtAlgorithms []string
-	routeTable    *gateway.RouteTable
-	tenantStatus  gateway.TenantStatusChecker
-	proxy         gateway.Proxier
-	rateLimiter   ratelimit.Limiter
-	rateLimits    ratelimit.LimitsProvider
-	rateLimitDefs ratelimit.Defaults
+	port            int
+	db              database.Service
+	roleCache       rbac.RoleCache
+	keyStore        auth.KeyStore
+	jwtAlgorithms   []string
+	routeTable      *gateway.RouteTable
+	tenantStatus    gateway.TenantStatusChecker
+	proxy           gateway.Proxier
+	rateLimiter     ratelimit.Limiter
+	rateLimits      ratelimit.LimitsProvider
+	rateLimitDefs   ratelimit.Defaults
+	responseCache   cache.ResponseCache
+	cacheDefaultTTL time.Duration
 }
 
 func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
@@ -64,6 +67,7 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 	tenantStatus := tenant.NewStatusCache(tenantRepo, redisClient, tenant.StatusCacheTTL)
 
 	rateLimitConfig := config.LoadRateLimitConfig()
+	cacheConfig := config.LoadCacheConfig()
 
 	NewServer := &Server{
 		port:          port,
@@ -80,6 +84,8 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 			PerMinute: rateLimitConfig.DefaultPerMinute,
 			PerHour:   rateLimitConfig.DefaultPerHour,
 		},
+		responseCache:   cache.NewResponseCache(redisClient),
+		cacheDefaultTTL: cacheConfig.DefaultTTL,
 	}
 
 	// Declare Server config
@@ -103,6 +109,7 @@ func toGatewayRoutes(entries []config.RouteEntry) []gateway.Route {
 			Upstream:            e.Upstream,
 			AuthRequired:        e.AuthRequired,
 			PermissionsRequired: e.PermissionsRequired,
+			CacheTTL:            time.Duration(e.CacheTTLSeconds) * time.Second,
 		}
 	}
 	return routes

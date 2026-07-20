@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"api-gateway/internal/auth"
+	"api-gateway/internal/cache"
 	"api-gateway/internal/gateway"
 	"api-gateway/internal/ratelimit"
 	"api-gateway/internal/rbac"
@@ -24,7 +25,9 @@ func (s *Server) RegisterRoutes() http.Handler {
 
 	mux.Handle("/api/", auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(
 		ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(
-			gateway.NewHandler(s.routeTable, s.tenantStatus, s.proxy),
+			cache.CacheMiddleware(s.responseCache, s.routeTable, s.tenantStatus, s.cacheDefaultTTL)(
+				gateway.NewHandler(s.routeTable, s.tenantStatus, s.proxy),
+			),
 		),
 	))
 

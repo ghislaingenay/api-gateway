@@ -1,10 +1,10 @@
 # TD-006: Response Caching
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-20
 
 Feature Spec: [FEAT-006 - Response Caching](../features/FEAT-006-response-caching.md)
 

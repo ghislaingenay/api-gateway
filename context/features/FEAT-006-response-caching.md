@@ -1,10 +1,10 @@
 # FEAT-006: Response Caching
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-20
 
 Technical Design: [TD-006 - Response Caching](../technical-designs/TD-006-response-caching.md)
 
@@ -78,9 +78,9 @@ The gateway must check Redis for a cached response before forwarding a GET reque
 
 #### Acceptance Criteria
 
-- [ ] Cache hit returns the stored response without a downstream call
-- [ ] Cache miss forwards to downstream and stores the response with configured TTL
-- [ ] Key always derives `tenant_id` from validated JWT claims, never from request input
+- [x] Cache hit returns the stored response without a downstream call
+- [x] Cache miss forwards to downstream and stores the response with configured TTL
+- [x] Key always derives `tenant_id` from validated JWT claims, never from request input
 
 ---
 
@@ -90,9 +90,9 @@ Cached responses must respect a per-route configurable TTL.
 
 #### Acceptance Criteria
 
-- [ ] Default TTL applied when route has no override
-- [ ] Route-specific TTL overrides the default
-- [ ] Expired entries are not served (Redis TTL handles eviction)
+- [x] Default TTL applied when route has no override
+- [x] Route-specific TTL overrides the default
+- [x] Expired entries are not served (Redis TTL handles eviction)
 
 ---
 
@@ -102,8 +102,8 @@ Only successful (2xx) GET responses are cached; error responses and non-GET meth
 
 #### Acceptance Criteria
 
-- [ ] 4xx/5xx responses are not written to cache
-- [ ] POST/PUT/PATCH/DELETE requests bypass the cache entirely
+- [x] 4xx/5xx responses are not written to cache
+- [x] POST/PUT/PATCH/DELETE requests bypass the cache entirely
 
 ---
 
@@ -116,9 +116,9 @@ Only successful (2xx) GET responses are cached; error responses and non-GET meth
 
 ## Permissions
 
-| Action                | All Tenants |
-| ----------------------- | ----------- |
-| Read own cached data    | ✅          |
+| Action                      | All Tenants                  |
+| --------------------------- | ---------------------------- |
+| Read own cached data        | ✅                           |
 | Read another tenant's cache | ❌ (structurally impossible) |
 
 ---
