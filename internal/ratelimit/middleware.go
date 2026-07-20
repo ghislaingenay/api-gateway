@@ -27,8 +27,8 @@ type Defaults struct {
 	PerHour   int
 }
 
-// RateLimitMiddleware enforces per-tenant, per-minute and per-hour rate
-// limits and sets the standard rate-limit response headers. It must run
+// RateLimitMiddleware enforces per-tenant, per-user, per-minute and per-hour
+// request limits and sets the standard rate-limit response headers. It must run
 // after auth.JWTAuthMiddleware, since it reads tenant/user identity from
 // validated claims rather than parsing the token itself. On any failure to
 // reach Redis or resolve tenant limits it fails open (allows the request)
