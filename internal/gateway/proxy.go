@@ -54,6 +54,9 @@ func (p *reverseProxier) proxyFor(upstream string) (*httputil.ReverseProxy, erro
 		return proxy, nil
 	}
 	proxy = httputil.NewSingleHostReverseProxy(target)
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, _ error) {
+		writeError(w, http.StatusBadGateway, "bad_gateway", "upstream unavailable")
+	}
 	p.proxies[upstream] = proxy
 	return proxy, nil
 }
