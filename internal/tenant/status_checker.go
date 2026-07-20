@@ -66,6 +66,7 @@ func (c *redisStatusCache) IsActive(ctx context.Context, tenantID uuid.UUID) (bo
 	t, err := c.repo.GetByID(ctx, tenantID)
 	if err != nil {
 		if errors.Is(err, ErrTenantNotFound) {
+			_ = c.redis.Set(ctx, key, statusInactive, c.ttl).Err()
 			return false, nil
 		}
 		return false, fmt.Errorf("load tenant for status check: %w", err)
