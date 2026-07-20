@@ -7,7 +7,7 @@
 | FEAT-002 | [RBAC Data Model](FEAT-002-rbac-data-model.md)                                               | Done   | [TD-002](../technical-designs/TD-002-rbac-data-model.md)             |
 | FEAT-003 | [Authorization Enforcement](FEAT-003-authorization-enforcement.md)                           | Done   | [TD-003](../technical-designs/TD-003-authorization-enforcement.md)   |
 | FEAT-004 | [Multi-Tenant Isolation & Routing](FEAT-004-multi-tenant-routing.md)                         | Done   | [TD-004](../technical-designs/TD-004-multi-tenant-routing.md)        |
-| FEAT-005 | [Distributed Rate Limiting](FEAT-005-distributed-rate-limiting.md)                           | Draft  | [TD-005](../technical-designs/TD-005-distributed-rate-limiting.md)   |
+| FEAT-005 | [Distributed Rate Limiting](FEAT-005-distributed-rate-limiting.md)                           | Done   | [TD-005](../technical-designs/TD-005-distributed-rate-limiting.md)   |
 | FEAT-006 | [Response Caching](FEAT-006-response-caching.md)                                             | Draft  | [TD-006](../technical-designs/TD-006-response-caching.md)            |
 | FEAT-007 | [Request Validation](FEAT-007-request-validation.md)                                         | Draft  | [TD-007](../technical-designs/TD-007-request-validation.md)          |
 | FEAT-008 | [Resilience (Retry & Timeout)](FEAT-008-resilience-retry-timeout.md)                         | Draft  | [TD-008](../technical-designs/TD-008-resilience-retry-timeout.md)    |

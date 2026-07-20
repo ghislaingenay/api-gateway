@@ -5,6 +5,7 @@ import (
 	"api-gateway/internal/auth"
 	"api-gateway/internal/database"
 	"api-gateway/internal/gateway"
+	"api-gateway/internal/ratelimit"
 	"api-gateway/internal/rbac"
 	"api-gateway/internal/tenant"
 	"context"
@@ -30,6 +31,9 @@ type Server struct {
 	routeTable    *gateway.RouteTable
 	tenantStatus  gateway.TenantStatusChecker
 	proxy         gateway.Proxier
+	rateLimiter   ratelimit.Limiter
+	rateLimits    ratelimit.LimitsProvider
+	rateLimitDefs ratelimit.Defaults
 }
 
 func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
@@ -59,6 +63,8 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 	tenantRepo := tenant.NewRepository(dbService.GetDB())
 	tenantStatus := tenant.NewStatusCache(tenantRepo, redisClient, tenant.StatusCacheTTL)
 
+	rateLimitConfig := config.LoadRateLimitConfig()
+
 	NewServer := &Server{
 		port:          port,
 		db:            dbService,
@@ -68,6 +74,12 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 		routeTable:    routeTable,
 		tenantStatus:  tenantStatus,
 		proxy:         gateway.NewReverseProxier(),
+		rateLimiter:   ratelimit.NewSlidingWindowLimiter(redisClient),
+		rateLimits:    tenantStatus,
+		rateLimitDefs: ratelimit.Defaults{
+			PerMinute: rateLimitConfig.DefaultPerMinute,
+			PerHour:   rateLimitConfig.DefaultPerHour,
+		},
 	}
 
 	// Declare Server config

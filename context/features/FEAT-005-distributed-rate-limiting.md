@@ -1,10 +1,10 @@
 # FEAT-005: Distributed Rate Limiting
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-20
 
 Technical Design: [TD-005 - Distributed Rate Limiting](../technical-designs/TD-005-distributed-rate-limiting.md)
 
@@ -79,9 +79,9 @@ The gateway must check and increment a per-tenant sliding-window counter in Redi
 
 #### Acceptance Criteria
 
-- [ ] Requests within limit proceed with `X-RateLimit-Remaining` header set
-- [ ] Requests exceeding limit return 429 with `Retry-After` header
-- [ ] Sliding window error rate stays within the documented ~0.003% tolerance
+- [x] Requests within limit proceed with `X-RateLimit-Remaining` header set
+- [x] Requests exceeding limit return 429 with `Retry-After` header
+- [x] Sliding window error rate stays within the documented ~0.003% tolerance
 
 ---
 
@@ -91,9 +91,9 @@ Rate limits must default from environment/config values and be overridable per t
 
 #### Acceptance Criteria
 
-- [ ] Tenant with no override uses environment default
-- [ ] Tenant with a configured override uses tenant-specific limit
-- [ ] Both per-minute and per-hour windows are enforced independently
+- [x] Tenant with no override uses environment default
+- [x] Tenant with a configured override uses tenant-specific limit
+- [x] Both per-minute and per-hour windows are enforced independently
 
 ---
 
@@ -103,8 +103,8 @@ If Redis is unavailable, the gateway must fail open (allow the request) and emit
 
 #### Acceptance Criteria
 
-- [ ] Redis connection failure does not block requests
-- [ ] Failure event is logged with correlation ID and triggers a monitorable metric
+- [x] Redis connection failure does not block requests
+- [ ] Failure event is logged with correlation ID and triggers a monitorable metric — logged (tenant ID, no correlation ID) but no metric; correlation ID + metric infra deferred to [[FEAT-009]] (Observability & Health Checks, FR-4 already covers rate-limit fail-opens)
 
 ---
 
@@ -148,7 +148,7 @@ If Redis is unavailable, the gateway must fail open (allow the request) and emit
 ## Internal
 
 - [[FEAT-004]] Multi-Tenant Isolation & Routing (source of `tenant_id`)
-- [[FEAT-008]] Observability & Health Checks (fail-open events logged/alerted)
+- [[FEAT-009]] Observability & Health Checks (fail-open events logged/alerted; FEAT-009 FR-4 already lists rate-limit fail-opens as a required structured-log event type)
 
 ## External
 

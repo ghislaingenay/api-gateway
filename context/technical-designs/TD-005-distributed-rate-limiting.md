@@ -1,10 +1,10 @@
 # TD-005: Distributed Rate Limiting
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-20
 
 Feature Spec: [FEAT-005 - Distributed Rate Limiting](../features/FEAT-005-distributed-rate-limiting.md)
 
@@ -150,7 +150,9 @@ This is the rate limiting component.
 
 ## Expected Load
 
-Every proxied request performs one Redis round-trip (INCR + read).
+Every proxied request performs two Redis round-trips (one `EVAL` — INCR +
+read — per window: per-minute and per-hour are enforced independently per
+FR-2, so they cannot share a single round-trip).
 
 ## Database Impact
 
@@ -195,7 +197,7 @@ Mitigation: fail-open is an accepted tradeoff (availability > strict enforcement
 
 Sliding window boundary error (~0.003%) allowing minor over-limit bursts.
 
-Mitigation: documented, accepted tolerance per Cloudflare's published approach (ADR-005); not a correctness bug.
+Mitigation: documented, accepted tolerance per Cloudflare's published approach; not a correctness bug.
 
 ---
 
@@ -219,8 +221,3 @@ Mitigation: documented, accepted tolerance per Cloudflare's published approach (
 - Exact sliding window formula/library choice (custom implementation vs. existing Go library)
 
 ---
-
-# 13. ADR References
-
-- ADR-002: Redis for Distributed Rate Limiting and Caching
-- ADR-005: Sliding Window Algorithm for Rate Limiting
