@@ -28,7 +28,7 @@ func (s *Server) RegisterRoutes() http.Handler {
 	mux.Handle("POST /auth/login", authhandler.LoginHandler(s.userRepo, s.tenantRepo, s.refreshTokens, s.roleCache, s.signer))
 	mux.Handle("POST /auth/refresh", authhandler.RefreshHandler(s.refreshTokens, s.userRepo, s.roleCache, s.signer))
 	mux.Handle("POST /auth/logout", s.requireAuth(authhandler.LogoutHandler(s.refreshTokens)))
-	mux.Handle("GET /auth/me", s.requireAuth(authhasndler.MeHandler(s.userRepo, s.roleCache)))
+	mux.Handle("GET /auth/me", s.requireAuth(authhandler.MeHandler(s.userRepo, s.roleCache)))
 
 	mux.Handle("/api/", auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(
 		validation.ValidationMiddleware(s.routeTable, s.validationMaxBodyBytes)(
