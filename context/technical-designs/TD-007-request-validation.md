@@ -1,6 +1,6 @@
 # TD-007: Request Validation
 
-Status: Doing
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
