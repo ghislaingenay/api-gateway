@@ -1,6 +1,6 @@
 # FEAT-007: Request Validation
 
-Status: Doing
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
@@ -111,9 +111,9 @@ Validation errors must be returned in a consistent JSON error format across all 
 
 ## Permissions
 
-| Action                     | All Authenticated Clients |
-| ---------------------------- | ---------------------------- |
-| Requests subject to validation | ✅                          |
+| Action                         | All Authenticated Clients |
+| ------------------------------ | ------------------------- |
+| Requests subject to validation | ✅                        |
 
 ---
 
