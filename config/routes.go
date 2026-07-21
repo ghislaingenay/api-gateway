@@ -6,6 +6,24 @@ import (
 	"os"
 )
 
+// BodyFieldEntry is one JSON body field validation rule in a route's
+// configured schema (FEAT-007).
+type BodyFieldEntry struct {
+	Field string `json:"field"`
+	// Rule is a go-playground validator tag string, e.g. "required,email".
+	Rule string `json:"rule"`
+}
+
+// RequiredParamEntry is one required path/query parameter validation rule
+// in a route's configured schema (FEAT-007).
+type RequiredParamEntry struct {
+	Name string `json:"name"`
+	// In is "query" or "path".
+	In string `json:"in"`
+	// Rule is a go-playground validator tag string, e.g. "required,uuid4".
+	Rule string `json:"rule"`
+}
+
 // RouteEntry is one row of the gateway's static path-to-service
 // configuration table.
 type RouteEntry struct {
@@ -17,6 +35,14 @@ type RouteEntry struct {
 	// CacheTTLSeconds overrides the gateway's default response-cache TTL for
 	// this route (FEAT-006). Zero/omitted means "no override".
 	CacheTTLSeconds int `json:"cache_ttl_seconds"`
+	// BodyRequired rejects an empty body with a 400 when true (FEAT-007).
+	BodyRequired bool `json:"body_required"`
+	// BodyFields are the JSON body fields validated for this route
+	// (FEAT-007). Omitted/empty means the body is not validated.
+	BodyFields []BodyFieldEntry `json:"body_fields"`
+	// RequiredParams are path/query parameters this route requires to be
+	// present and type-valid (FEAT-007). Omitted/empty means none.
+	RequiredParams []RequiredParamEntry `json:"required_params"`
 }
 
 // LoadRoutesConfig reads the static route table from the JSON file at
@@ -40,6 +66,11 @@ func LoadRoutesConfig() ([]RouteEntry, error) {
 	for _, route := range routes {
 		if route.CacheTTLSeconds < 0 {
 			return nil, fmt.Errorf("route %s %s: cache_ttl_seconds must not be negative, got %d", route.Method, route.Path, route.CacheTTLSeconds)
+		}
+		for _, p := range route.RequiredParams {
+			if p.In != "query" && p.In != "path" {
+				return nil, fmt.Errorf("route %s %s: required_params[%q].in must be \"query\" or \"path\", got %q", route.Method, route.Path, p.Name, p.In)
+			}
 		}
 	}
 

@@ -11,6 +11,7 @@ import (
 	"api-gateway/internal/gateway"
 	"api-gateway/internal/ratelimit"
 	"api-gateway/internal/rbac"
+	"api-gateway/internal/validation"
 )
 
 func (s *Server) RegisterRoutes() http.Handler {
@@ -30,9 +31,11 @@ func (s *Server) RegisterRoutes() http.Handler {
 	mux.Handle("GET /auth/me", s.requireAuth(authhandler.MeHandler(s.userRepo, s.roleCache)))
 
 	mux.Handle("/api/", auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(
-		ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(
-			cache.CacheMiddleware(s.responseCache, s.routeTable, s.tenantStatus, s.cacheDefaultTTL)(
-				gateway.NewHandler(s.routeTable, s.tenantStatus, s.proxy),
+		validation.ValidationMiddleware(s.routeTable, s.validationMaxBodyBytes)(
+			ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(
+				cache.CacheMiddleware(s.responseCache, s.routeTable, s.tenantStatus, s.cacheDefaultTTL)(
+					gateway.NewHandler(s.routeTable, s.tenantStatus, s.proxy),
+				),
 			),
 		),
 	))
