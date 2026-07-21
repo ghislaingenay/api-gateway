@@ -4,13 +4,21 @@
     "method": "GET",
     "upstream": "http://orders-service:8081",
     "auth_required": true,
-    "permissions_required": ["orders:read"]
+    "permissions_required": ["orders:read"],
+    "required_params": [
+      { "name": "id", "in": "path", "rule": "required,uuid4" }
+    ]
   },
   {
     "path": "/api/orders",
     "method": "POST",
     "upstream": "http://orders-service:8081",
     "auth_required": true,
-    "permissions_required": ["orders:create"]
+    "permissions_required": ["orders:create"],
+    "body_required": true,
+    "body_fields": [
+      { "field": "customer_email", "rule": "required,email" },
+      { "field": "quantity", "rule": "required,gt=0" }
+    ]
   }
 ]

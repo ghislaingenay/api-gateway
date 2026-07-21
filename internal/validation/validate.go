@@ -68,3 +68,15 @@ func Validate(s interface{}) error {
 	return validate.Struct(s)
 }
 
+// validateVar validates a single value against a validator tag string
+// (e.g. "required,email"), used by the request validation middleware to
+// check body fields and path/query parameters that aren't backed by a Go
+// struct.
+func validateVar(value interface{}, tag string) error {
+	validate, err := getValidator()
+	if err != nil {
+		return err
+	}
+	return validate.Var(value, tag)
+}
+

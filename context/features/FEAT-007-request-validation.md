@@ -1,10 +1,10 @@
 # FEAT-007: Request Validation
 
-Status: Draft
+Status: Doing
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-21
 
 Technical Design: [TD-007 - Request Validation](../technical-designs/TD-007-request-validation.md)
 

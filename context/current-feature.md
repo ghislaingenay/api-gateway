@@ -1,17 +1,17 @@
 # Current Feature
 
-FEAT-006: Response Caching
+FEAT-007: Request Validation
 
 ## File
 
-[FEAT-006-response-caching.md](features/FEAT-006-response-caching.md)
+[FEAT-007-request-validation.md](features/FEAT-007-request-validation.md)
 
 ## Goals
 
-- [x] FR-1: Gateway checks Redis for a cached response before forwarding a GET request downstream, using key format `cache:{tenant_id}:{method}:{path}:{query_hash}`
-- [x] FR-2: Cached responses respect a per-route configurable TTL
-- [x] FR-3: Only successful (2xx) GET responses are cached; error responses and non-GET methods are never cached
+- [ ] FR-1: Gateway validates JSON request bodies against a per-route schema (struct validation tags consistent with the project's data models)
+- [ ] FR-2: Gateway validates required path/query parameters per route configuration
+- [ ] FR-3: Validation errors are returned in a consistent JSON error format across all routes
 
 ## Notes
 
-Redis-backed response cache for GET requests, tenant-scoped by construction (key always derives tenant_id from validated JWT claims). Fails open to a downstream call on Redis errors/miss. Sits between ratelimit.RateLimitMiddleware and gateway.NewHandler in the /api/ chain. Default TTL: 60s (user decision). Cache-Control: no-store from downstream is ignored for MVP (user decision). Branch: feat-006/response-caching (already checked out; FEAT-005 dependency merged from master).
+Middleware validates body/params against a per-route schema resolved from the static route table, runs after auth and before rate limiting (auth -> validation -> ratelimit -> cache -> gateway), and fails closed with 400 on any validation failure. Schemas are data-driven (JSON config, like FEAT-006's CacheTTL) rather than tied to compile-time Go structs, since routed bodies belong to external upstream services this repo doesn't own. Branch: feat-007/request-validation.

@@ -26,23 +26,24 @@ import (
 )
 
 type Server struct {
-	port            int
-	db              database.Service
-	roleCache       rbac.RoleCache
-	keyStore        auth.KeyStore
-	jwtAlgorithms   []string
-	routeTable      *gateway.RouteTable
-	tenantStatus    gateway.TenantStatusChecker
-	proxy           gateway.Proxier
-	rateLimiter     ratelimit.Limiter
-	rateLimits      ratelimit.LimitsProvider
-	rateLimitDefs   ratelimit.Defaults
-	responseCache   cache.ResponseCache
-	cacheDefaultTTL time.Duration
-	userRepo        user.Repository
-	tenantRepo      tenant.Repository
-	refreshTokens   refreshtoken.Repository
-	signer          auth.Signer
+	port                   int
+	db                     database.Service
+	roleCache              rbac.RoleCache
+	keyStore               auth.KeyStore
+	jwtAlgorithms          []string
+	routeTable             *gateway.RouteTable
+	tenantStatus           gateway.TenantStatusChecker
+	proxy                  gateway.Proxier
+	rateLimiter            ratelimit.Limiter
+	rateLimits             ratelimit.LimitsProvider
+	rateLimitDefs          ratelimit.Defaults
+	responseCache          cache.ResponseCache
+	cacheDefaultTTL        time.Duration
+	validationMaxBodyBytes int64
+	userRepo               user.Repository
+	tenantRepo             tenant.Repository
+	refreshTokens          refreshtoken.Repository
+	signer                 auth.Signer
 }
 
 func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
@@ -74,6 +75,7 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 
 	rateLimitConfig := config.LoadRateLimitConfig()
 	cacheConfig := config.LoadCacheConfig()
+	validationConfig := config.LoadValidationConfig()
 
 	signer, err := auth.NewSigner(jwtConfig.SigningKID, jwtConfig.SigningPrivateKey)
 	if err != nil {
@@ -95,12 +97,13 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 			PerMinute: rateLimitConfig.DefaultPerMinute,
 			PerHour:   rateLimitConfig.DefaultPerHour,
 		},
-		responseCache:   cache.NewResponseCache(redisClient),
-		cacheDefaultTTL: cacheConfig.DefaultTTL,
-		userRepo:        user.NewRepository(dbService.GetDB()),
-		tenantRepo:      tenantRepo,
-		refreshTokens:   refreshtoken.NewRepository(dbService.GetDB()),
-		signer:          signer,
+		responseCache:          cache.NewResponseCache(redisClient),
+		cacheDefaultTTL:        cacheConfig.DefaultTTL,
+		validationMaxBodyBytes: validationConfig.MaxBodyBytes,
+		userRepo:               user.NewRepository(dbService.GetDB()),
+		tenantRepo:             tenantRepo,
+		refreshTokens:          refreshtoken.NewRepository(dbService.GetDB()),
+		signer:                 signer,
 	}
 
 	// Declare Server config
@@ -125,7 +128,34 @@ func toGatewayRoutes(entries []config.RouteEntry) []gateway.Route {
 			AuthRequired:        e.AuthRequired,
 			PermissionsRequired: e.PermissionsRequired,
 			CacheTTL:            time.Duration(e.CacheTTLSeconds) * time.Second,
+			BodySchema:          toBodySchema(e),
+			RequiredParams:      toRequiredParams(e.RequiredParams),
 		}
 	}
 	return routes
+}
+
+// toBodySchema builds a route's body validation schema from its config
+// entry, or returns nil if the route has no body validation configured
+// (FEAT-007).
+func toBodySchema(e config.RouteEntry) *gateway.BodySchema {
+	if !e.BodyRequired && len(e.BodyFields) == 0 {
+		return nil
+	}
+	fields := make([]gateway.FieldRule, len(e.BodyFields))
+	for i, f := range e.BodyFields {
+		fields[i] = gateway.FieldRule{Field: f.Field, Rule: f.Rule}
+	}
+	return &gateway.BodySchema{Required: e.BodyRequired, Fields: fields}
+}
+
+func toRequiredParams(entries []config.RequiredParamEntry) []gateway.ParamRule {
+	if len(entries) == 0 {
+		return nil
+	}
+	params := make([]gateway.ParamRule, len(entries))
+	for i, p := range entries {
+		params[i] = gateway.ParamRule{Name: p.Name, In: gateway.ParamLocation(p.In), Rule: p.Rule}
+	}
+	return params
 }

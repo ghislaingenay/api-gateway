@@ -11,6 +11,7 @@ import (
 	"api-gateway/internal/gateway"
 	"api-gateway/internal/ratelimit"
 	"api-gateway/internal/rbac"
+	"api-gateway/internal/validation"
 )
 
 func (s *Server) RegisterRoutes() http.Handler {
@@ -27,12 +28,14 @@ func (s *Server) RegisterRoutes() http.Handler {
 	mux.Handle("POST /auth/login", authhandler.LoginHandler(s.userRepo, s.tenantRepo, s.refreshTokens, s.roleCache, s.signer))
 	mux.Handle("POST /auth/refresh", authhandler.RefreshHandler(s.refreshTokens, s.userRepo, s.roleCache, s.signer))
 	mux.Handle("POST /auth/logout", s.requireAuth(authhandler.LogoutHandler(s.refreshTokens)))
-	mux.Handle("GET /auth/me", s.requireAuth(authhandler.MeHandler(s.userRepo, s.roleCache)))
+	mux.Handle("GET /auth/me", s.requireAuth(authhasndler.MeHandler(s.userRepo, s.roleCache)))
 
 	mux.Handle("/api/", auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(
-		ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(
-			cache.CacheMiddleware(s.responseCache, s.routeTable, s.tenantStatus, s.cacheDefaultTTL)(
-				gateway.NewHandler(s.routeTable, s.tenantStatus, s.proxy),
+		validation.ValidationMiddleware(s.routeTable, s.validationMaxBodyBytes)(
+			ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(
+				cache.CacheMiddleware(s.responseCache, s.routeTable, s.tenantStatus, s.cacheDefaultTTL)(
+					gateway.NewHandler(s.routeTable, s.tenantStatus, s.proxy),
+				),
 			),
 		),
 	))

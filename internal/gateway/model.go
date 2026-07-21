@@ -16,6 +16,13 @@ type Route struct {
 	// CacheTTL overrides the gateway's default response-cache TTL for this
 	// route (FEAT-006). Zero means "no override" — the default TTL applies.
 	CacheTTL time.Duration
+	// BodySchema, if set, is validated against this route's JSON request
+	// body by validation.ValidationMiddleware (FEAT-007). Nil means the
+	// body is not validated.
+	BodySchema *BodySchema
+	// RequiredParams are path/query parameters validation.ValidationMiddleware
+	// requires to be present (and type-valid) on this route (FEAT-007).
+	RequiredParams []ParamRule
 }
 
 // RouteTable resolves the destination Route for an incoming request from a
