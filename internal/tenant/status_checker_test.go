@@ -19,6 +19,10 @@ func (f *fakeRepository) GetByID(ctx context.Context, id uuid.UUID) (*Tenant, er
 	return f.tenant, f.err
 }
 
+func (f *fakeRepository) GetBySlug(ctx context.Context, slug string) (*Tenant, error) {
+	return f.tenant, f.err
+}
+
 type fakeStatusCacheStore struct {
 	getResult *redis.StringCmd
 	setResult *redis.StatusCmd

@@ -12,6 +12,10 @@ build:
 # Run the application
 run:
 	@go run cmd/api/main.go
+
+# Seed dev/test users (requires APP_ENV=development)
+seed:
+	@go run cmd/seed/main.go
 # Create DB container
 docker-run:
 	@if docker compose up --build 2>/dev/null; then \
@@ -61,4 +65,4 @@ watch:
             fi; \
         fi
 
-.PHONY: all build run test clean watch docker-run docker-down itest
+.PHONY: all build run seed test clean watch docker-run docker-down itest

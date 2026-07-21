@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"api-gateway/internal/auth"
+	"api-gateway/internal/authhandler"
 	"api-gateway/internal/cache"
 	"api-gateway/internal/gateway"
 	"api-gateway/internal/ratelimit"
@@ -22,6 +23,11 @@ func (s *Server) RegisterRoutes() http.Handler {
 
 	mux.Handle("GET /roles", s.requirePermission("roles:read", rbac.RolesHandler(s.roleCache)))
 	mux.Handle("GET /permissions", s.requirePermission("roles:read", rbac.PermissionsHandler(s.roleCache)))
+
+	mux.Handle("POST /auth/login", authhandler.LoginHandler(s.userRepo, s.tenantRepo, s.refreshTokens, s.roleCache, s.signer))
+	mux.Handle("POST /auth/refresh", authhandler.RefreshHandler(s.refreshTokens, s.userRepo, s.roleCache, s.signer))
+	mux.Handle("POST /auth/logout", s.requireAuth(authhandler.LogoutHandler(s.refreshTokens)))
+	mux.Handle("GET /auth/me", s.requireAuth(authhandler.MeHandler(s.userRepo, s.roleCache)))
 
 	mux.Handle("/api/", auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(
 		ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(
@@ -40,6 +46,12 @@ func (s *Server) RegisterRoutes() http.Handler {
 // can reach it.
 func (s *Server) requirePermission(permission string, next http.HandlerFunc) http.Handler {
 	return auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(auth.RequirePermission(permission)(next))
+}
+
+// requireAuth wraps a handler with JWT authentication only, for endpoints
+// that need an authenticated caller but no specific permission.
+func (s *Server) requireAuth(next http.HandlerFunc) http.Handler {
+	return auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(next)
 }
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {

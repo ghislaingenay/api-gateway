@@ -12,12 +12,20 @@ type JWTConfig struct {
 	// SigningKeys maps a key ID (kid) to a base64-encoded PEM-encoded RSA
 	// public key, enabling multiple simultaneously active keys for rotation.
 	SigningKeys map[string]string
+	// SigningKID is the kid used to sign newly issued tokens. Its public
+	// half must be present in SigningKeys.
+	SigningKID string
+	// SigningPrivateKey is a base64-encoded PEM-encoded RSA private key used
+	// to sign newly issued tokens.
+	SigningPrivateKey string
 }
 
 // LoadJWTConfig reads JWT settings from the environment.
 //
 // JWT_ALLOWED_ALGORITHMS is a comma-separated list (defaults to "RS256").
 // JWT_SIGNING_KEYS is a comma-separated list of "kid=base64pem" pairs.
+// JWT_SIGNING_KID and JWT_SIGNING_PRIVATE_KEY configure the key used to
+// sign newly issued tokens (login/refresh).
 func LoadJWTConfig() *JWTConfig {
 	algos := os.Getenv("JWT_ALLOWED_ALGORITHMS")
 	if algos == "" {
@@ -31,15 +39,20 @@ func LoadJWTConfig() *JWTConfig {
 		}
 	}
 
+	signingKID := strings.TrimSpace(os.Getenv("JWT_SIGNING_KID"))
+	signingPrivateKey := strings.TrimSpace(os.Getenv("JWT_SIGNING_PRIVATE_KEY"))
+
 	keys := make(map[string]string)
 	jwtSigningKeys := os.Getenv("JWT_SIGNING_KEYS")
 	if strings.TrimSpace(jwtSigningKeys) == "" {
 		return &JWTConfig{
 			AllowedAlgorithms: allowed,
 			SigningKeys:       keys,
+			SigningKID:        signingKID,
+			SigningPrivateKey: signingPrivateKey,
 		}
 	}
-	
+
 	for _, pair := range strings.Split(jwtSigningKeys, ",") {
 		kid, key, found := strings.Cut(pair, "=")
 		kid, key = strings.TrimSpace(kid), strings.TrimSpace(key)
@@ -52,5 +65,7 @@ func LoadJWTConfig() *JWTConfig {
 	return &JWTConfig{
 		AllowedAlgorithms: allowed,
 		SigningKeys:       keys,
+		SigningKID:        signingKID,
+		SigningPrivateKey: signingPrivateKey,
 	}
 }

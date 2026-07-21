@@ -23,6 +23,15 @@ func (f *fakeRoleCache) GetRole(name string) (*Role, bool) {
 	return nil, false
 }
 
+func (f *fakeRoleCache) GetRoleByID(id uuid.UUID) (*Role, bool) {
+	for i := range f.roles {
+		if f.roles[i].ID == id {
+			return &f.roles[i], true
+		}
+	}
+	return nil, false
+}
+
 func (f *fakeRoleCache) All() []Role                  { return f.roles }
 func (f *fakeRoleCache) AllPermissions() []Permission { return f.permissions }
 

@@ -11,4 +11,8 @@ var (
 	ErrUnknownKey = errors.New("unknown signing key")
 	// ErrMissingClaims means a required custom claim (tenant_id, user_id) was absent or zero-valued.
 	ErrMissingClaims = errors.New("missing required claim")
+	// ErrInvalidCredentials means a login attempt's email/password did not match a known, active account.
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	// ErrInvalidRefreshToken means a refresh token was unknown, expired, or already revoked.
+	ErrInvalidRefreshToken = errors.New("invalid refresh token")
 )
