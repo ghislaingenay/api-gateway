@@ -18,6 +18,7 @@ import (
 // rather than refreshed per request.
 type RoleCache interface {
 	GetRole(name string) (*Role, bool)
+	GetRoleByID(id uuid.UUID) (*Role, bool)
 	All() []Role
 	AllPermissions() []Permission
 }
@@ -25,6 +26,7 @@ type RoleCache interface {
 type roleCache struct {
 	roles       []Role
 	byName      map[string]*Role
+	byID        map[uuid.UUID]*Role
 	permissions []Permission
 }
 
@@ -48,17 +50,25 @@ func NewRoleCache(ctx context.Context, db database.Service) (RoleCache, error) {
 	}
 
 	byName := make(map[string]*Role, len(roles))
+	byID := make(map[uuid.UUID]*Role, len(roles))
 	for i := range roles {
 		byName[roles[i].Name] = &roles[i]
+		byID[roles[i].ID] = &roles[i]
 	}
 
 	log.Printf("rbac: loaded %d roles, %d permissions", len(roles), len(permissions))
-	return &roleCache{roles: roles, byName: byName, permissions: permissions}, nil
+	return &roleCache{roles: roles, byName: byName, byID: byID, permissions: permissions}, nil
 }
 
 // GetRole implements RoleCache.
 func (c *roleCache) GetRole(name string) (*Role, bool) {
 	role, ok := c.byName[name]
+	return role, ok
+}
+
+// GetRoleByID implements RoleCache.
+func (c *roleCache) GetRoleByID(id uuid.UUID) (*Role, bool) {
+	role, ok := c.byID[id]
 	return role, ok
 }
 

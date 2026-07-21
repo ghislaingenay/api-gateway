@@ -8,7 +8,9 @@ import (
 	"api-gateway/internal/gateway"
 	"api-gateway/internal/ratelimit"
 	"api-gateway/internal/rbac"
+	"api-gateway/internal/refreshtoken"
 	"api-gateway/internal/tenant"
+	"api-gateway/internal/user"
 	"context"
 	"database/sql"
 	"fmt"
@@ -37,6 +39,10 @@ type Server struct {
 	rateLimitDefs   ratelimit.Defaults
 	responseCache   cache.ResponseCache
 	cacheDefaultTTL time.Duration
+	userRepo        user.Repository
+	tenantRepo      tenant.Repository
+	refreshTokens   refreshtoken.Repository
+	signer          auth.Signer
 }
 
 func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
@@ -69,6 +75,11 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 	rateLimitConfig := config.LoadRateLimitConfig()
 	cacheConfig := config.LoadCacheConfig()
 
+	signer, err := auth.NewSigner(jwtConfig.SigningKID, jwtConfig.SigningPrivateKey)
+	if err != nil {
+		log.Fatalf("failed to build JWT signer: %v", err)
+	}
+
 	NewServer := &Server{
 		port:          port,
 		db:            dbService,
@@ -86,6 +97,10 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 		},
 		responseCache:   cache.NewResponseCache(redisClient),
 		cacheDefaultTTL: cacheConfig.DefaultTTL,
+		userRepo:        user.NewRepository(dbService.GetDB()),
+		tenantRepo:      tenantRepo,
+		refreshTokens:   refreshtoken.NewRepository(dbService.GetDB()),
+		signer:          signer,
 	}
 
 	// Declare Server config

@@ -35,6 +35,15 @@ func encodePublicKeyPEM(t *testing.T, key *rsa.PublicKey) string {
 	return base64.StdEncoding.EncodeToString(block)
 }
 
+// encodePrivateKeyPEM base64-encodes the PEM-encoded PKCS1 private key,
+// matching the format config.JWTConfig.SigningPrivateKey expects.
+func encodePrivateKeyPEM(t *testing.T, key *rsa.PrivateKey) string {
+	t.Helper()
+	der := x509.MarshalPKCS1PrivateKey(key)
+	block := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der})
+	return base64.StdEncoding.EncodeToString(block)
+}
+
 // validClaims returns CustomClaims that pass Validate() and standard
 // registered-claim checks (not expired, already valid).
 func validClaims() CustomClaims {
