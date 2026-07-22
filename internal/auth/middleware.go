@@ -2,9 +2,10 @@ package auth
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
+
+	"api-gateway/internal/logger"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -22,8 +23,11 @@ func JWTAuthMiddleware(keyStore KeyStore, allowedAlgorithms []string) func(http.
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tokenString, err := bearerToken(r)
 			if err != nil {
-				log.Printf("jwt auth rejected: %v", err)
-				writeUnauthorized(w)
+				logger.FromContext(r.Context()).Warn("jwt auth rejected",
+					"event_type", "auth_failure",
+					"reason", err.Error(),
+				)
+				writeUnauthorized(w, r)
 				return
 			}
 
@@ -36,8 +40,11 @@ func JWTAuthMiddleware(keyStore KeyStore, allowedAlgorithms []string) func(http.
 				return keyStore.GetKey(kid)
 			}, jwt.WithValidMethods(allowedAlgorithms))
 			if err != nil {
-				log.Printf("jwt auth rejected: %v", err)
-				writeUnauthorized(w)
+				logger.FromContext(r.Context()).Warn("jwt auth rejected",
+					"event_type", "auth_failure",
+					"reason", err.Error(),
+				)
+				writeUnauthorized(w, r)
 				return
 			}
 
@@ -58,13 +65,13 @@ func bearerToken(r *http.Request) (string, error) {
 	return token, nil
 }
 
-func writeUnauthorized(w http.ResponseWriter) {
+func writeUnauthorized(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	if err := json.NewEncoder(w).Encode(map[string]string{
 		"error":   "unauthorized",
 		"message": "invalid or missing token",
 	}); err != nil {
-		log.Printf("failed to write unauthorized response: %v", err)
+		logger.FromContext(r.Context()).Error("auth: failed to write unauthorized response", "error", err.Error())
 	}
 }

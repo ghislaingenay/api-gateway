@@ -3,10 +3,10 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 
 	"api-gateway/internal/auth"
+	"api-gateway/internal/logger"
 
 	"github.com/google/uuid"
 )
@@ -39,18 +39,18 @@ func NewHandler(routes *RouteTable, statusChecker TenantStatusChecker, proxy Pro
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok || claims == nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "missing authenticated identity")
+			writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing authenticated identity")
 			return
 		}
 
 		active, err := statusChecker.IsActive(r.Context(), claims.TenantID)
 		if err != nil {
-			log.Printf("gateway: tenant status check failed: %v", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to verify tenant status")
+			logger.FromContext(r.Context()).Error("gateway: tenant status check failed", "error", err.Error())
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "failed to verify tenant status")
 			return
 		}
 		if !active {
-			writeError(w, http.StatusForbidden, "tenant_inactive", "tenant is not active")
+			writeError(w, r, http.StatusForbidden, "tenant_inactive", "tenant is not active")
 			return
 		}
 
@@ -58,7 +58,7 @@ func NewHandler(routes *RouteTable, statusChecker TenantStatusChecker, proxy Pro
 		if !ok {
 			route, ok = routes.Resolve(r.Method, r.URL.Path)
 			if !ok {
-				writeError(w, http.StatusNotFound, "not_found", "no matching route")
+				writeError(w, r, http.StatusNotFound, "not_found", "no matching route")
 				return
 			}
 			// Share the resolved route via context so a decorating Proxier
@@ -76,13 +76,13 @@ func NewHandler(routes *RouteTable, statusChecker TenantStatusChecker, proxy Pro
 	})
 }
 
-func writeError(w http.ResponseWriter, status int, code, message string) {
+func writeError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(map[string]string{
 		"error":   code,
 		"message": message,
 	}); err != nil {
-		log.Printf("gateway: failed to write error response: %v", err)
+		logger.FromContext(r.Context()).Error("gateway: failed to write error response", "error", err.Error())
 	}
 }

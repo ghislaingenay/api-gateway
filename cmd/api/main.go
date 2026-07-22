@@ -2,9 +2,8 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"api-gateway/config"
 	"api-gateway/internal/cache"
 	"api-gateway/internal/database"
+	"api-gateway/internal/logger"
 	"api-gateway/internal/server"
 
 	"github.com/redis/go-redis/v9"
@@ -32,27 +32,28 @@ func main() {
 	// 2. Initialize Redis
 	redisClient, err := cache.NewRedisClient(cfg.RedisURL)
 	if err != nil {
-		log.Fatalf("Could not connect to Redis: %v", err)
+		logger.Default().Error("api: could not connect to redis", "error", err.Error())
+		os.Exit(1)
 	}
 	defer redisClient.Close()
-	fmt.Println("Redis connected successfully!")
+	logger.Default().Info("api: redis connected successfully")
 
 	// 3. Initialize Database
 	dbService := database.New()
 	defer dbService.Close()
-	fmt.Println("Database connected successfully!")
-
+	logger.Default().Info("api: database connected successfully")
 
 	featureFlags := config.LoadFeatureFlags()
 	allowAutoDBMigration := featureFlags.AllowAutoDBMigration
 
 	if allowAutoDBMigration {
 		if err := database.Migrate(dbService.GetDB()); err != nil {
-			log.Fatalf("Could not run database migrations: %v", err)
+			logger.Default().Error("api: could not run database migrations", "error", err.Error())
+			os.Exit(1)
 		}
-		fmt.Println("Database migrations applied successfully!")
+		logger.Default().Info("api: database migrations applied successfully")
 	} else {
-		fmt.Println("Auto database migration is disabled. Skipping migrations.")
+		logger.Default().Info("api: auto database migration is disabled, skipping migrations")
 	}
 
 	// 4. Inject dependencies into your application struct
@@ -71,14 +72,15 @@ func main() {
 	// Run graceful shutdown in a separate goroutine
 	go gracefulShutdown(server, done)
 
-	log.Println("Server is ready to handle requests at :8080")
+	logger.Default().Info("api: server is ready to handle requests", "addr", ":8080")
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("Could not listen on %s: %v\n", ":8080", err)
+		logger.Default().Error("api: could not listen", "addr", ":8080", "error", err.Error())
+		os.Exit(1)
 	}
 
 	// Wait for the graceful shutdown to complete
 	<-done
-	log.Println("Graceful shutdown complete.")
+	logger.Default().Info("api: graceful shutdown complete")
 }
 
 func gracefulShutdown(apiServer *http.Server, done chan bool) {
@@ -89,7 +91,7 @@ func gracefulShutdown(apiServer *http.Server, done chan bool) {
 	// Listen for the interrupt signal.
 	<-ctx.Done()
 
-	log.Println("shutting down gracefully, press Ctrl+C again to force")
+	logger.Default().Info("api: shutting down gracefully, press Ctrl+C again to force")
 	stop() // Allow Ctrl+C to force shutdown
 
 	// The context is used to inform the server it has 5 seconds to finish
@@ -97,10 +99,10 @@ func gracefulShutdown(apiServer *http.Server, done chan bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := apiServer.Shutdown(ctx); err != nil {
-		log.Printf("Server forced to shutdown with error: %v", err)
+		logger.Default().Error("api: server forced to shutdown", "error", err.Error())
 	}
 
-	log.Println("Server exiting")
+	logger.Default().Info("api: server exiting")
 
 	// Notify the main goroutine that the shutdown is complete
 	done <- true
