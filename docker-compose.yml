@@ -1,24 +1,108 @@
 services:
-  psql_bp:
-    image: postgres:latest
+  postgres:
+    image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_DATABASE}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: gateway
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: gateway
     ports:
-      - "${DB_PORT}:5432"
+      - "5433:5432"
     volumes:
-      - psql_volume_bp:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-  redis_bp:
-    image: redis:latest
+  redis:
+    image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
-      - redis_volume_bp:/data
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot migration job (coding-standards.md "Database Migrations"): runs
+  # to completion before the gateway starts, instead of migrating on
+  # production server boot.
+  migrate:
+    image: api-gateway-devtools:local
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: ["migrate"]
+    environment: &db_env
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: gateway
+      DB_USER: gateway
+      DB_PASSWORD: gateway
+      DB_SSL_MODE: disable
+      DB_SCHEMA: public
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      # Reuses the repo's local dev JWT signing keys (JWT_SIGNING_*) and
+      # APP_ENV; DB/Redis/PORT below are overridden to point at the
+      # in-compose containers instead of .env's cloud defaults.
+      - .env
+    environment:
+      <<: *db_env
+      APP_ENV: development
+      PORT: "8080"
+      REDIS_URL: redis://redis:6379
+      ALLOW_AUTO_DB_MIGRATION: "false"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # Mock downstream service matching config/routes.json's orders-service
+  # upstream (http://orders-service:8081), for exercising the gateway's
+  # full proxy flow end-to-end (FEAT-010).
+  orders-service:
+    image: api-gateway-devtools:local
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: ["mockorders"]
+    environment:
+      PORT: "8081"
+    ports:
+      - "8081:8081"
+
+  # Mock downstream service matching config/routes.json's inventory-service
+  # upstream (http://inventory-service:8082).
+  inventory-service:
+    image: api-gateway-devtools:local
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: ["mockinventory"]
+    environment:
+      PORT: "8082"
+    ports:
+      - "8082:8082"
 
 volumes:
-  psql_volume_bp:
-  redis_volume_bp:
+  postgres_data:
+  redis_data:

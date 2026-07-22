@@ -12,4 +12,4 @@
 | TD-007 | [Request Validation](TD-007-request-validation.md)                                         | Done   | [FEAT-007](../features/FEAT-007-request-validation.md)          |
 | TD-008 | [Resilience (Retry & Timeout)](TD-008-resilience-retry-timeout.md)                         | Done   | [FEAT-008](../features/FEAT-008-resilience-retry-timeout.md)    |
 | TD-009 | [Observability & Health Checks](TD-009-observability-health-checks.md)                     | Done   | [FEAT-009](../features/FEAT-009-observability-health-checks.md) |
-| TD-010 | [API Documentation & Dev Environment](TD-010-api-docs-dev-environment.md)                  | Draft  | [FEAT-010](../features/FEAT-010-api-docs-dev-environment.md)    |
+| TD-010 | [API Documentation & Dev Environment](TD-010-api-docs-dev-environment.md)                  | Done   | [FEAT-010](../features/FEAT-010-api-docs-dev-environment.md)    |

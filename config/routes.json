@@ -20,5 +20,15 @@
       { "field": "customer_email", "rule": "required,email" },
       { "field": "quantity", "rule": "required,gt=0" }
     ]
+  },
+  {
+    "path": "/api/inventory/*",
+    "method": "GET",
+    "upstream": "http://inventory-service:8082",
+    "auth_required": true,
+    "permissions_required": [],
+    "required_params": [
+      { "name": "id", "in": "path", "rule": "required,uuid4" }
+    ]
   }
 ]

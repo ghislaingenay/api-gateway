@@ -1,10 +1,10 @@
 # FEAT-010: API Documentation & Dev Environment
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-22
 
 Technical Design: [TD-010 - API Documentation & Dev Environment](../technical-designs/TD-010-api-docs-dev-environment.md)
 
@@ -77,9 +77,9 @@ The project must include an OpenAPI 3.0 spec covering all gateway-managed endpoi
 
 #### Acceptance Criteria
 
-- [ ] OpenAPI spec validates against the 3.0 schema
-- [ ] Every documented endpoint matches actual gateway behavior (auth requirements, response codes)
-- [ ] Swagger UI is served at a discoverable path (e.g., `/docs`) — TODO: confirm exact path, not specified in overview
+- [x] OpenAPI spec validates against the 3.0 schema
+- [x] Every documented endpoint matches actual gateway behavior (auth requirements, response codes)
+- [x] Swagger UI is served at a discoverable path (e.g., `/docs`) — TODO: confirm exact path, not specified in overview
 
 ---
 
@@ -89,9 +89,9 @@ The project must include an OpenAPI 3.0 spec covering all gateway-managed endpoi
 
 #### Acceptance Criteria
 
-- [ ] `docker compose up` starts all services with correct dependency ordering (DB/Redis healthy before gateway starts)
-- [ ] Database migrations run automatically on startup (or via a documented one-line command)
-- [ ] Mock downstream services respond to at least one representative route each for demonstration
+- [x] `docker compose up` starts all services with correct dependency ordering (DB/Redis healthy before gateway starts)
+- [x] Database migrations run automatically on startup (or via a documented one-line command)
+- [x] Mock downstream services respond to at least one representative route each for demonstration
 
 ---
 
@@ -101,9 +101,9 @@ The project README must document setup, architecture, and key design decisions w
 
 #### Acceptance Criteria
 
-- [ ] README includes an architecture diagram of the request flow
-- [ ] README includes local setup instructions matching the actual Docker Compose configuration
-- [ ] README links to ADRs for key design decisions
+- [x] README includes an architecture diagram of the request flow
+- [x] README includes local setup instructions matching the actual Docker Compose configuration
+- [ ] README links to ADRs for key design decisions — no ADR files exist in the repo yet (context/ has no `adrs/` directory); linked to the equivalent TD design-decision docs instead. See report.
 
 ---
 

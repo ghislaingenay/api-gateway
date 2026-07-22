@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1
+#
+# Local-development-only image (FEAT-010): bundles the one-shot migration
+# job and the two mock downstream services into a single image. Compose
+# builds this once (services share the same `image:` tag) and selects
+# which binary to run per-service via `command:`. None of these are
+# shipped to production — the production gateway image is built from
+# ./Dockerfile.
+
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /out/migrate ./cmd/migrate
+RUN CGO_ENABLED=0 go build -o /out/mockorders ./cmd/mockorders
+RUN CGO_ENABLED=0 go build -o /out/mockinventory ./cmd/mockinventory
+
+FROM alpine:3.20
+COPY --from=build /out/migrate /usr/local/bin/migrate
+COPY --from=build /out/mockorders /usr/local/bin/mockorders
+COPY --from=build /out/mockinventory /usr/local/bin/mockinventory
