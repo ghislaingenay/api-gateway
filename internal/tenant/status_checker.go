@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"time"
+
+	"api-gateway/internal/logger"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -117,7 +118,10 @@ func (c *redisStatusCache) RateLimits(ctx context.Context, tenantID uuid.UUID) (
 		// a DB outage, not just a Redis outage. Log it and fall back to a
 		// zero-value RateLimits instead, which callers resolve against their
 		// own configured defaults, so rate limiting still applies.
-		log.Printf("tenant: failed to load rate limits for tenant %s, falling back to defaults: %v", tenantID, err)
+		logger.FromContext(ctx).Warn("tenant: failed to load rate limits, falling back to defaults",
+			"tenant_id", tenantID.String(),
+			"error", err.Error(),
+		)
 		return RateLimits{}, nil
 	}
 

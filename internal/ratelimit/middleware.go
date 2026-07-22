@@ -3,11 +3,11 @@ package ratelimit
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 
 	"api-gateway/internal/auth"
+	"api-gateway/internal/logger"
 	"api-gateway/internal/tenant"
 
 	"github.com/google/uuid"
@@ -38,13 +38,17 @@ func RateLimitMiddleware(limiter Limiter, limits LimitsProvider, defaults Defaul
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims, ok := auth.ClaimsFromContext(r.Context())
 			if !ok || claims == nil {
-				writeError(w, http.StatusUnauthorized, "unauthorized", "missing authenticated identity")
+				writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing authenticated identity")
 				return
 			}
 
 			tenantLimits, err := limits.RateLimits(r.Context(), claims.TenantID)
 			if err != nil {
-				log.Printf("ratelimit: failed to resolve tenant limits for tenant %s, failing open: %v", claims.TenantID, err)
+				logger.FromContext(r.Context()).Warn("ratelimit: failed to resolve tenant limits, failing open",
+					"event_type", "rate_limit_fail_open",
+					"tenant_id", claims.TenantID.String(),
+					"reason", err.Error(),
+				)
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -54,14 +58,22 @@ func RateLimitMiddleware(limiter Limiter, limits LimitsProvider, defaults Defaul
 
 			minuteDecision, err := limiter.Allow(r.Context(), claims.TenantID, claims.UserID, WindowMinute, perMinute)
 			if err != nil {
-				log.Printf("ratelimit: redis unavailable for tenant %s, failing open: %v", claims.TenantID, err)
+				logger.FromContext(r.Context()).Warn("ratelimit: redis unavailable, failing open",
+					"event_type", "rate_limit_fail_open",
+					"tenant_id", claims.TenantID.String(),
+					"reason", err.Error(),
+				)
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			hourDecision, err := limiter.Allow(r.Context(), claims.TenantID, claims.UserID, WindowHour, perHour)
 			if err != nil {
-				log.Printf("ratelimit: redis unavailable for tenant %s, failing open: %v", claims.TenantID, err)
+				logger.FromContext(r.Context()).Warn("ratelimit: redis unavailable, failing open",
+					"event_type", "rate_limit_fail_open",
+					"tenant_id", claims.TenantID.String(),
+					"reason", err.Error(),
+				)
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -79,7 +91,7 @@ func RateLimitMiddleware(limiter Limiter, limits LimitsProvider, defaults Defaul
 					retryAfter = hourDecision.RetryAfter
 				}
 				w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
-				writeError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "too many requests")
+				writeError(w, r, http.StatusTooManyRequests, "rate_limit_exceeded", "too many requests")
 				return
 			}
 
@@ -95,13 +107,13 @@ func resolveLimit(configured, fallback int) int {
 	return configured
 }
 
-func writeError(w http.ResponseWriter, status int, code, message string) {
+func writeError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(map[string]string{
 		"error":   code,
 		"message": message,
 	}); err != nil {
-		log.Printf("ratelimit: failed to write error response: %v", err)
+		logger.FromContext(r.Context()).Error("ratelimit: failed to write error response", "error", err.Error())
 	}
 }

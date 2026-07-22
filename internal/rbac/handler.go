@@ -2,8 +2,9 @@ package rbac
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
+
+	"api-gateway/internal/logger"
 )
 
 // RolesHandler returns an http.HandlerFunc for GET /roles, listing every
@@ -18,7 +19,7 @@ func RolesHandler(roles RoleCache) http.HandlerFunc {
 		for _, role := range all {
 			response = append(response, newRoleResponse(role))
 		}
-		writeJSON(w, http.StatusOK, response)
+		writeJSON(w, r, http.StatusOK, response)
 	}
 }
 
@@ -34,14 +35,14 @@ func PermissionsHandler(roles RoleCache) http.HandlerFunc {
 		for _, permission := range all {
 			response = append(response, newPermissionResponse(permission))
 		}
-		writeJSON(w, http.StatusOK, response)
+		writeJSON(w, r, http.StatusOK, response)
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, body any) {
+func writeJSON(w http.ResponseWriter, r *http.Request, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(body); err != nil {
-		log.Printf("rbac: failed to write response: %v", err)
+		logger.FromContext(r.Context()).Error("rbac: failed to write response", "error", err.Error())
 	}
 }
