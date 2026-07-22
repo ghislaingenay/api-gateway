@@ -77,6 +77,7 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 	rateLimitConfig := config.LoadRateLimitConfig()
 	cacheConfig := config.LoadCacheConfig()
 	resilienceConfig := config.LoadResilienceConfig()
+	validationConfig := config.LoadValidationConfig()
 
 	signer, err := auth.NewSigner(jwtConfig.SigningKID, jwtConfig.SigningPrivateKey)
 	if err != nil {
@@ -138,6 +139,8 @@ func toGatewayRoutes(entries []config.RouteEntry) []gateway.Route {
 			CacheTTL:            time.Duration(e.CacheTTLSeconds) * time.Second,
 			Deadline:            time.Duration(e.DeadlineSeconds) * time.Second,
 			RetryMaxAttempts:    e.RetryMaxAttempts,
+			BodySchema:          toBodySchema(e),
+			RequiredParams:      toRequiredParams(e.RequiredParams),
 		}
 	}
 	return routes

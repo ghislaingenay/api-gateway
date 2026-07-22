@@ -41,6 +41,14 @@ type RouteEntry struct {
 	// RetryMaxAttempts overrides the default max retry attempts for GET
 	// requests to this route (FEAT-008). Zero/omitted means "no override".
 	RetryMaxAttempts int `json:"retry_max_attempts"`
+	// BodyRequired rejects an empty body with a 400 when true (FEAT-007).
+	BodyRequired bool `json:"body_required"`
+	// BodyFields are the JSON body fields validated for this route
+	// (FEAT-007). Omitted/empty means the body is not validated.
+	BodyFields []BodyFieldEntry `json:"body_fields"`
+	// RequiredParams are path/query parameters this route requires to be
+	// present and type-valid (FEAT-007). Omitted/empty means none.
+	RequiredParams []RequiredParamEntry `json:"required_params"`
 }
 
 // LoadRoutesConfig reads the static route table from the JSON file at
@@ -70,6 +78,11 @@ func LoadRoutesConfig() ([]RouteEntry, error) {
 		}
 		if route.RetryMaxAttempts < 0 {
 			return nil, fmt.Errorf("route %s %s: retry_max_attempts must not be negative, got %d", route.Method, route.Path, route.RetryMaxAttempts)
+		}
+		for _, p := range route.RequiredParams {
+			if p.In != "query" && p.In != "path" {
+				return nil, fmt.Errorf("route %s %s: required_params[%q].in must be \"query\" or \"path\", got %q", route.Method, route.Path, p.Name, p.In)
+			}
 		}
 	}
 
