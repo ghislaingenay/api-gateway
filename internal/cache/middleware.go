@@ -3,13 +3,13 @@ package cache
 import (
 	"bytes"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"api-gateway/internal/auth"
 	"api-gateway/internal/gateway"
+	"api-gateway/internal/logger"
 )
 
 // maxCacheableBodyBytes bounds how large a downstream response body may be
@@ -45,7 +45,7 @@ func CacheMiddleware(store ResponseCache, routes RouteResolver, tenantStatus gat
 
 			claims, ok := auth.ClaimsFromContext(r.Context())
 			if !ok || claims == nil {
-				writeError(w, http.StatusUnauthorized, "unauthorized", "missing authenticated identity")
+				writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing authenticated identity")
 				return
 			}
 
@@ -70,20 +70,36 @@ func CacheMiddleware(store ResponseCache, routes RouteResolver, tenantStatus gat
 
 			cached, hit, err := store.Get(r.Context(), key)
 			if err != nil {
-				log.Printf("cache: redis unavailable for key %s, failing open: %v", key, err)
+				logger.FromContext(r.Context()).Warn("cache: redis unavailable, failing open",
+					"key", key,
+					"error", err.Error(),
+				)
 			} else if hit {
 				active, err := tenantStatus.IsActive(r.Context(), claims.TenantID)
 				if err != nil {
-					log.Printf("cache: tenant status check failed for tenant %s, failing open to downstream: %v", claims.TenantID, err)
+					logger.FromContext(r.Context()).Warn("cache: tenant status check failed, failing open to downstream",
+						"tenant_id", claims.TenantID.String(),
+						"error", err.Error(),
+					)
 				} else if !active {
-					writeError(w, http.StatusForbidden, "tenant_inactive", "tenant is not active")
+					writeError(w, r, http.StatusForbidden, "tenant_inactive", "tenant is not active")
 					return
 				} else {
-					writeCached(w, cached)
+					logger.FromContext(r.Context()).Info("cache hit",
+						"event_type", "cache_hit",
+						"tenant_id", claims.TenantID.String(),
+						"path", r.URL.Path,
+					)
+					writeCached(w, r, cached)
 					return
 				}
 			}
 
+			logger.FromContext(r.Context()).Info("cache miss",
+				"event_type", "cache_miss",
+				"tenant_id", claims.TenantID.String(),
+				"path", r.URL.Path,
+			)
 			w.Header().Set("X-Cache", "MISS")
 			rec := newResponseRecorder(w)
 			next.ServeHTTP(rec, r)
@@ -95,7 +111,7 @@ func CacheMiddleware(store ResponseCache, routes RouteResolver, tenantStatus gat
 					Body:       rec.body.Bytes(),
 				}
 				if err := store.Set(r.Context(), key, resp, ttl); err != nil {
-					log.Printf("cache: failed to store response for key %s: %v", key, err)
+					logger.FromContext(r.Context()).Error("cache: failed to store response", "key", key, "error", err.Error())
 				}
 			}
 		})
@@ -104,7 +120,7 @@ func CacheMiddleware(store ResponseCache, routes RouteResolver, tenantStatus gat
 
 // writeCached replays a cached response verbatim, including its stored
 // headers, and marks it with X-Cache: HIT for observability.
-func writeCached(w http.ResponseWriter, cached *CachedResponse) {
+func writeCached(w http.ResponseWriter, r *http.Request, cached *CachedResponse) {
 	dst := w.Header()
 	for k, v := range cached.Header {
 		dst[k] = v
@@ -112,7 +128,7 @@ func writeCached(w http.ResponseWriter, cached *CachedResponse) {
 	w.Header().Set("X-Cache", "HIT")
 	w.WriteHeader(cached.StatusCode)
 	if _, err := w.Write(cached.Body); err != nil {
-		log.Printf("cache: failed to write cached response: %v", err)
+		logger.FromContext(r.Context()).Error("cache: failed to write cached response", "error", err.Error())
 	}
 }
 
@@ -190,13 +206,13 @@ func (r *responseRecorder) Flush() {
 	}
 }
 
-func writeError(w http.ResponseWriter, status int, code, message string) {
+func writeError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(map[string]string{
 		"error":   code,
 		"message": message,
 	}); err != nil {
-		log.Printf("cache: failed to write error response: %v", err)
+		logger.FromContext(r.Context()).Error("cache: failed to write error response", "error", err.Error())
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"api-gateway/internal/cache"
 	"api-gateway/internal/database"
 	"api-gateway/internal/gateway"
+	"api-gateway/internal/health"
+	"api-gateway/internal/logger"
 	"api-gateway/internal/ratelimit"
 	"api-gateway/internal/rbac"
 	"api-gateway/internal/refreshtoken"
@@ -15,7 +17,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -28,7 +29,6 @@ import (
 
 type Server struct {
 	port                   int
-	db                     database.Service
 	roleCache              rbac.RoleCache
 	keyStore               auth.KeyStore
 	jwtAlgorithms          []string
@@ -41,6 +41,7 @@ type Server struct {
 	responseCache          cache.ResponseCache
 	cacheDefaultTTL        time.Duration
 	validationMaxBodyBytes int64
+	healthChecker          *health.DependencyChecker
 	userRepo               user.Repository
 	tenantRepo             tenant.Repository
 	refreshTokens          refreshtoken.Repository
@@ -56,18 +57,21 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 
 	roleCache, err := rbac.NewRoleCache(ctx, dbService)
 	if err != nil {
-		log.Fatalf("failed to load role cache: %v", err)
+		logger.Default().Error("server: failed to load role cache", "error", err.Error())
+		os.Exit(1)
 	}
 
 	jwtConfig := config.LoadJWTConfig()
 	keyStore, err := auth.NewKeyStore(jwtConfig)
 	if err != nil {
-		log.Fatalf("failed to load JWT key store: %v", err)
+		logger.Default().Error("server: failed to load JWT key store", "error", err.Error())
+		os.Exit(1)
 	}
 
 	routeEntries, err := config.LoadRoutesConfig()
 	if err != nil {
-		log.Fatalf("failed to load routes config: %v", err)
+		logger.Default().Error("server: failed to load routes config", "error", err.Error())
+		os.Exit(1)
 	}
 	routeTable := gateway.NewRouteTable(toGatewayRoutes(routeEntries))
 
@@ -81,12 +85,12 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 
 	signer, err := auth.NewSigner(jwtConfig.SigningKID, jwtConfig.SigningPrivateKey)
 	if err != nil {
-		log.Fatalf("failed to build JWT signer: %v", err)
+		logger.Default().Error("server: failed to build JWT signer", "error", err.Error())
+		os.Exit(1)
 	}
 
 	NewServer := &Server{
 		port:          port,
-		db:            dbService,
 		roleCache:     roleCache,
 		keyStore:      keyStore,
 		jwtAlgorithms: jwtConfig.AllowedAlgorithms,
@@ -109,6 +113,7 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 		responseCache:          cache.NewResponseCache(redisClient),
 		cacheDefaultTTL:        cacheConfig.DefaultTTL,
 		validationMaxBodyBytes: validationConfig.MaxBodyBytes,
+		healthChecker:          health.NewDependencyChecker(redisClient, dbService.GetDB()),
 		userRepo:               user.NewRepository(dbService.GetDB()),
 		tenantRepo:             tenantRepo,
 		refreshTokens:          refreshtoken.NewRepository(dbService.GetDB()),

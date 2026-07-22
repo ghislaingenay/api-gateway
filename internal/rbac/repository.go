@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"api-gateway/internal/database"
+	"api-gateway/internal/logger"
 
 	"github.com/google/uuid"
 )
@@ -56,7 +56,7 @@ func NewRoleCache(ctx context.Context, db database.Service) (RoleCache, error) {
 		byID[roles[i].ID] = &roles[i]
 	}
 
-	log.Printf("rbac: loaded %d roles, %d permissions", len(roles), len(permissions))
+	logger.FromContext(ctx).Info("rbac: loaded role cache", "roles", len(roles), "permissions", len(permissions))
 	return &roleCache{roles: roles, byName: byName, byID: byID, permissions: permissions}, nil
 }
 
@@ -93,7 +93,7 @@ func loadRoles(ctx context.Context, db *sql.DB) ([]Role, error) {
 	}
 	defer func() {
 		if cerr := rows.Close(); cerr != nil {
-			log.Printf("rbac: failed to close roles rows: %v", cerr)
+			logger.FromContext(ctx).Error("rbac: failed to close roles rows", "error", cerr.Error())
 		}
 	}()
 
@@ -134,7 +134,7 @@ func loadPermissions(ctx context.Context, db *sql.DB) ([]Permission, error) {
 	}
 	defer func() {
 		if cerr := rows.Close(); cerr != nil {
-			log.Printf("rbac: failed to close permissions rows: %v", cerr)
+			logger.FromContext(ctx).Error("rbac: failed to close permissions rows", "error", cerr.Error())
 		}
 	}()
 

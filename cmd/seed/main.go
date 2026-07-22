@@ -5,11 +5,12 @@ package main
 
 import (
 	"context"
-	"log"
+	"os"
 
 	"api-gateway/config"
 	"api-gateway/internal/auth"
 	"api-gateway/internal/database"
+	"api-gateway/internal/logger"
 
 	"github.com/google/uuid"
 )
@@ -33,7 +34,8 @@ var seedUsers = []seedUser{
 
 func main() {
 	if !config.IsDevelopmentMode() {
-		log.Fatal("seed: refusing to run outside APP_ENV=development")
+		logger.Default().Error("seed: refusing to run outside APP_ENV=development")
+		os.Exit(1)
 	}
 
 	dbService := database.New()
@@ -43,7 +45,8 @@ func main() {
 
 	passwordHash, err := auth.HashPassword(seedPassword)
 	if err != nil {
-		log.Fatalf("seed: hash password: %v", err)
+		logger.Default().Error("seed: hash password", "error", err.Error())
+		os.Exit(1)
 	}
 
 	var tenantID uuid.UUID
@@ -54,13 +57,15 @@ func main() {
 		RETURNING id
 	`, seedTenant.name, seedTenant.slug).Scan(&tenantID)
 	if err != nil {
-		log.Fatalf("seed: upsert tenant: %v", err)
+		logger.Default().Error("seed: upsert tenant", "error", err.Error())
+		os.Exit(1)
 	}
 
 	for _, su := range seedUsers {
 		var roleID uuid.UUID
 		if err := db.QueryRowContext(ctx, `SELECT id FROM roles WHERE name = $1`, su.role).Scan(&roleID); err != nil {
-			log.Fatalf("seed: lookup role %q: %v", su.role, err)
+			logger.Default().Error("seed: lookup role", "role", su.role, "error", err.Error())
+			os.Exit(1)
 		}
 
 		_, err := db.ExecContext(ctx, `
@@ -69,10 +74,11 @@ func main() {
 			ON CONFLICT (tenant_id, email) DO UPDATE SET password_hash = EXCLUDED.password_hash
 		`, tenantID, roleID, su.email, passwordHash)
 		if err != nil {
-			log.Fatalf("seed: upsert user %q: %v", su.email, err)
+			logger.Default().Error("seed: upsert user", "email", su.email, "error", err.Error())
+			os.Exit(1)
 		}
-		log.Printf("seed: user ready email=%s role=%s password=%s tenant_slug=%s", su.email, su.role, seedPassword, seedTenant.slug)
+		logger.Default().Info("seed: user ready", "email", su.email, "role", su.role, "password", seedPassword, "tenant_slug", seedTenant.slug)
 	}
 
-	log.Println("seed: done")
+	logger.Default().Info("seed: done")
 }

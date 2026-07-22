@@ -2,13 +2,14 @@ package server
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 
 	"api-gateway/internal/auth"
 	"api-gateway/internal/authhandler"
 	"api-gateway/internal/cache"
 	"api-gateway/internal/gateway"
+	"api-gateway/internal/health"
+	"api-gateway/internal/logger"
 	"api-gateway/internal/ratelimit"
 	"api-gateway/internal/rbac"
 	"api-gateway/internal/validation"
@@ -20,7 +21,10 @@ func (s *Server) RegisterRoutes() http.Handler {
 	// Register routes
 	mux.HandleFunc("/", s.HelloWorldHandler)
 
-	mux.HandleFunc("/health", s.healthHandler)
+	// /health and /ready are never subject to authentication, rate
+	// limiting, or caching middleware (FEAT-009 Business Rules).
+	mux.Handle("GET /health", health.HealthHandler())
+	mux.Handle("GET /ready", health.ReadyHandler(s.healthChecker))
 
 	mux.Handle("GET /roles", s.requirePermission("roles:read", rbac.RolesHandler(s.roleCache)))
 	mux.Handle("GET /permissions", s.requirePermission("roles:read", rbac.PermissionsHandler(s.roleCache)))
@@ -40,8 +44,11 @@ func (s *Server) RegisterRoutes() http.Handler {
 		),
 	))
 
-	// Wrap the mux with CORS middleware
-	return s.corsMiddleware(mux)
+	// CorrelationIDMiddleware runs first in the chain (FEAT-009 TD-009 §2)
+	// so every other middleware can log through logger.FromContext with the
+	// correlation ID already attached, and every response — including
+	// /health and /ready — carries the X-Correlation-ID header.
+	return logger.CorrelationIDMiddleware(s.corsMiddleware(mux))
 }
 
 // requirePermission wraps a handler with JWT authentication and a permission
@@ -85,18 +92,6 @@ func (s *Server) HelloWorldHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if _, err := w.Write(jsonResp); err != nil {
-		log.Printf("Failed to write response: %v", err)
-	}
-}
-
-func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
-	resp, err := json.Marshal(s.db.Health())
-	if err != nil {
-		http.Error(w, "Failed to marshal health check response", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write(resp); err != nil {
-		log.Printf("Failed to write response: %v", err)
+		logger.FromContext(r.Context()).Error("server: failed to write response", "error", err.Error())
 	}
 }

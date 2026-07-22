@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"time"
 
 	"api-gateway/internal/auth"
+	"api-gateway/internal/logger"
 	"api-gateway/internal/rbac"
 	"api-gateway/internal/refreshtoken"
 	"api-gateway/internal/tenant"
@@ -29,11 +29,11 @@ func LoginHandler(users user.Repository, tenants tenant.Repository, refreshToken
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req LoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", "malformed request body")
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "malformed request body")
 			return
 		}
 		if err := validation.Validate(req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", "email, password, and tenant_slug are required")
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "email, password, and tenant_slug are required")
 			return
 		}
 
@@ -41,43 +41,43 @@ func LoginHandler(users user.Repository, tenants tenant.Repository, refreshToken
 
 		t, err := tenants.GetBySlug(ctx, req.TenantSlug)
 		if err != nil {
-			writeInvalidCredentials(w)
+			writeInvalidCredentials(w, r)
 			return
 		}
 
 		u, err := users.GetByEmail(ctx, t.ID, req.Email)
 		if err != nil {
-			writeInvalidCredentials(w)
+			writeInvalidCredentials(w, r)
 			return
 		}
 		if !u.IsActive {
-			writeInvalidCredentials(w)
+			writeInvalidCredentials(w, r)
 			return
 		}
 		if err := auth.ComparePassword(u.PasswordHash, req.Password); err != nil {
-			writeInvalidCredentials(w)
+			writeInvalidCredentials(w, r)
 			return
 		}
 
 		role, ok := roles.GetRoleByID(u.RoleID)
 		if !ok {
-			log.Printf("authhandler: login: user %s has unknown role_id %s", u.ID, u.RoleID)
-			writeError(w, http.StatusInternalServerError, "internal_error", "could not resolve user role")
+			logger.FromContext(ctx).Error("authhandler: login: user has unknown role_id", "user_id", u.ID.String(), "role_id", u.RoleID.String())
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "could not resolve user role")
 			return
 		}
 
 		resp, err := issueTokenPair(ctx, refreshTokens, signer, *u, *role)
 		if err != nil {
-			log.Printf("authhandler: login: issue tokens for user %s: %v", u.ID, err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "could not issue tokens")
+			logger.FromContext(ctx).Error("authhandler: login: issue tokens", "user_id", u.ID.String(), "error", err.Error())
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "could not issue tokens")
 			return
 		}
 
 		if err := users.UpdateLastLoginAt(ctx, u.ID, time.Now()); err != nil {
-			log.Printf("authhandler: login: update last_login_at for user %s: %v", u.ID, err)
+			logger.FromContext(ctx).Warn("authhandler: login: update last_login_at", "user_id", u.ID.String(), "error", err.Error())
 		}
 
-		writeJSON(w, http.StatusOK, resp)
+		writeJSON(w, r, http.StatusOK, resp)
 	}
 }
 
@@ -86,11 +86,11 @@ func RefreshHandler(refreshTokens refreshtoken.Repository, users user.Repository
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req RefreshRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", "malformed request body")
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "malformed request body")
 			return
 		}
 		if err := validation.Validate(req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", "refresh_token is required")
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "refresh_token is required")
 			return
 		}
 
@@ -98,41 +98,41 @@ func RefreshHandler(refreshTokens refreshtoken.Repository, users user.Repository
 
 		existing, err := refreshTokens.GetByHash(ctx, auth.HashRefreshToken(req.RefreshToken))
 		if err != nil {
-			writeInvalidToken(w)
+			writeInvalidToken(w, r)
 			return
 		}
 		if !existing.Valid(time.Now()) {
-			writeInvalidToken(w)
+			writeInvalidToken(w, r)
 			return
 		}
 
 		u, err := users.GetByID(ctx, existing.UserID)
 		if err != nil || !u.IsActive {
-			writeInvalidToken(w)
+			writeInvalidToken(w, r)
 			return
 		}
 
 		role, ok := roles.GetRoleByID(u.RoleID)
 		if !ok {
-			log.Printf("authhandler: refresh: user %s has unknown role_id %s", u.ID, u.RoleID)
-			writeError(w, http.StatusInternalServerError, "internal_error", "could not resolve user role")
+			logger.FromContext(ctx).Error("authhandler: refresh: user has unknown role_id", "user_id", u.ID.String(), "role_id", u.RoleID.String())
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "could not resolve user role")
 			return
 		}
 
 		if err := refreshTokens.Revoke(ctx, existing.ID); err != nil {
-			log.Printf("authhandler: refresh: revoke old token for user %s: %v", u.ID, err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "could not rotate refresh token")
+			logger.FromContext(ctx).Error("authhandler: refresh: revoke old token", "user_id", u.ID.String(), "error", err.Error())
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "could not rotate refresh token")
 			return
 		}
 
 		resp, err := issueTokenPair(ctx, refreshTokens, signer, *u, *role)
 		if err != nil {
-			log.Printf("authhandler: refresh: issue tokens for user %s: %v", u.ID, err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "could not issue tokens")
+			logger.FromContext(ctx).Error("authhandler: refresh: issue tokens", "user_id", u.ID.String(), "error", err.Error())
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "could not issue tokens")
 			return
 		}
 
-		writeJSON(w, http.StatusOK, resp)
+		writeJSON(w, r, http.StatusOK, resp)
 	}
 }
 
@@ -144,11 +144,11 @@ func LogoutHandler(refreshTokens refreshtoken.Repository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req LogoutRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", "malformed request body")
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "malformed request body")
 			return
 		}
 		if err := validation.Validate(req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", "refresh_token is required")
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "refresh_token is required")
 			return
 		}
 
@@ -156,13 +156,13 @@ func LogoutHandler(refreshTokens refreshtoken.Repository) http.HandlerFunc {
 		existing, err := refreshTokens.GetByHash(ctx, auth.HashRefreshToken(req.RefreshToken))
 		if err == nil {
 			if err := refreshTokens.Revoke(ctx, existing.ID); err != nil {
-				log.Printf("authhandler: logout: revoke token: %v", err)
+				logger.FromContext(ctx).Error("authhandler: logout: revoke token", "error", err.Error())
 			}
 		} else if !errors.Is(err, refreshtoken.ErrNotFound) {
-			log.Printf("authhandler: logout: lookup token: %v", err)
+			logger.FromContext(ctx).Error("authhandler: logout: lookup token", "error", err.Error())
 		}
 
-		writeJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
+		writeJSON(w, r, http.StatusOK, map[string]string{"message": "logged out"})
 	}
 }
 
@@ -174,13 +174,13 @@ func MeHandler(users user.Repository, roles rbac.RoleCache) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok || claims == nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid or missing token")
+			writeError(w, r, http.StatusUnauthorized, "unauthorized", "invalid or missing token")
 			return
 		}
 
 		u, err := users.GetByID(r.Context(), claims.UserID)
 		if err != nil || !u.IsActive {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid or missing token")
+			writeError(w, r, http.StatusUnauthorized, "unauthorized", "invalid or missing token")
 			return
 		}
 
@@ -190,7 +190,7 @@ func MeHandler(users user.Repository, roles rbac.RoleCache) http.HandlerFunc {
 			roleName = role.Name
 		}
 
-		writeJSON(w, http.StatusOK, newUserResponse(*u, roleName))
+		writeJSON(w, r, http.StatusOK, newUserResponse(*u, roleName))
 	}
 }
 
@@ -240,22 +240,22 @@ func issueTokenPair(ctx context.Context, refreshTokens refreshtoken.Repository, 
 	}, nil
 }
 
-func writeInvalidCredentials(w http.ResponseWriter) {
-	writeError(w, http.StatusUnauthorized, "invalid_credentials", "invalid email or password")
+func writeInvalidCredentials(w http.ResponseWriter, r *http.Request) {
+	writeError(w, r, http.StatusUnauthorized, "invalid_credentials", "invalid email or password")
 }
 
-func writeInvalidToken(w http.ResponseWriter) {
-	writeError(w, http.StatusUnauthorized, "invalid_token", "invalid or expired refresh token")
+func writeInvalidToken(w http.ResponseWriter, r *http.Request) {
+	writeError(w, r, http.StatusUnauthorized, "invalid_token", "invalid or expired refresh token")
 }
 
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]string{"error": code, "message": message})
+func writeError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	writeJSON(w, r, status, map[string]string{"error": code, "message": message})
 }
 
-func writeJSON(w http.ResponseWriter, status int, body any) {
+func writeJSON(w http.ResponseWriter, r *http.Request, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(body); err != nil {
-		log.Printf("authhandler: failed to write response: %v", err)
+		logger.FromContext(r.Context()).Error("authhandler: failed to write response", "error", err.Error())
 	}
 }

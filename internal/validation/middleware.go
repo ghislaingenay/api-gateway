@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 
 	"api-gateway/internal/gateway"
+	"api-gateway/internal/logger"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -59,7 +59,7 @@ func ValidationMiddleware(routes RouteResolver, maxBodyBytes int64) func(http.Ha
 			}
 
 			if len(fieldErrors) > 0 {
-				writeValidationError(w, fieldErrors)
+				writeValidationError(w, r, fieldErrors)
 				return
 			}
 
@@ -113,14 +113,14 @@ func pathParamValue(pattern, path string) string {
 func validateBody(w http.ResponseWriter, r *http.Request, schema *gateway.BodySchema, maxBodyBytes int64) (fieldErrors []FieldError, done bool) {
 	raw, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
 	if closeErr := r.Body.Close(); closeErr != nil {
-		log.Printf("validation: failed to close request body: %v", closeErr)
+		logger.FromContext(r.Context()).Error("validation: failed to close request body", "error", closeErr.Error())
 	}
 	if err != nil {
-		writeValidationMessage(w, "unable to read request body")
+		writeValidationMessage(w, r, "unable to read request body")
 		return nil, true
 	}
 	if int64(len(raw)) > maxBodyBytes {
-		writeValidationMessage(w, "request body exceeds maximum allowed size")
+		writeValidationMessage(w, r, "request body exceeds maximum allowed size")
 		return nil, true
 	}
 	r.Body = io.NopCloser(bytes.NewReader(raw))
@@ -134,7 +134,7 @@ func validateBody(w http.ResponseWriter, r *http.Request, schema *gateway.BodySc
 
 	var body map[string]interface{}
 	if err := json.Unmarshal(raw, &body); err != nil {
-		writeValidationMessage(w, "request body must be valid JSON")
+		writeValidationMessage(w, r, "request body must be valid JSON")
 		return nil, true
 	}
 
@@ -164,29 +164,29 @@ func reasonFor(err error) string {
 	return "invalid"
 }
 
-func writeValidationError(w http.ResponseWriter, fields []FieldError) {
-	writeError(w, ErrorResponse{
+func writeValidationError(w http.ResponseWriter, r *http.Request, fields []FieldError) {
+	writeError(w, r, ErrorResponse{
 		Error:   "validation_failed",
 		Message: "request validation failed",
 		Fields:  fields,
 	})
 }
 
-func writeValidationMessage(w http.ResponseWriter, message string) {
-	writeError(w, ErrorResponse{
+func writeValidationMessage(w http.ResponseWriter, r *http.Request, message string) {
+	writeError(w, r, ErrorResponse{
 		Error:   "validation_failed",
 		Message: message,
 		Fields:  []FieldError{},
 	})
 }
 
-func writeError(w http.ResponseWriter, resp ErrorResponse) {
+func writeError(w http.ResponseWriter, r *http.Request, resp ErrorResponse) {
 	if resp.Fields == nil {
 		resp.Fields = []FieldError{}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("validation: failed to write error response: %v", err)
+		logger.FromContext(r.Context()).Error("validation: failed to write error response", "error", err.Error())
 	}
 }

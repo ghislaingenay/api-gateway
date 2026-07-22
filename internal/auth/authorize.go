@@ -2,12 +2,12 @@ package auth
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"slices"
 	"strings"
 
 	"api-gateway/internal/audit"
+	"api-gateway/internal/logger"
 )
 
 // RequirePermission returns middleware that rejects requests whose validated
@@ -19,15 +19,15 @@ func RequirePermission(permission string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims, ok := ClaimsFromContext(r.Context())
 			if !ok || claims == nil {
-				writeUnauthorized(w)
+				writeUnauthorized(w, r)
 				return
 			}
 			if !slices.Contains(claims.Permissions, permission) {
-				audit.LogAuthzDecision(false, claims.TenantID, claims.UserID, permission)
-				writeForbidden(w, "insufficient permissions")
+				audit.LogAuthzDecision(r.Context(), false, claims.TenantID, claims.UserID, permission)
+				writeForbidden(w, r, "insufficient permissions")
 				return
 			}
-			audit.LogAuthzDecision(true, claims.TenantID, claims.UserID, permission)
+			audit.LogAuthzDecision(r.Context(), true, claims.TenantID, claims.UserID, permission)
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -43,27 +43,27 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims, ok := ClaimsFromContext(r.Context())
 			if !ok || claims == nil {
-				writeUnauthorized(w)
+				writeUnauthorized(w, r)
 				return
 			}
 			if !slices.Contains(roles, claims.Role) {
-				audit.LogAuthzDecision(false, claims.TenantID, claims.UserID, required)
-				writeForbidden(w, "insufficient role")
+				audit.LogAuthzDecision(r.Context(), false, claims.TenantID, claims.UserID, required)
+				writeForbidden(w, r, "insufficient role")
 				return
 			}
-			audit.LogAuthzDecision(true, claims.TenantID, claims.UserID, required)
+			audit.LogAuthzDecision(r.Context(), true, claims.TenantID, claims.UserID, required)
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-func writeForbidden(w http.ResponseWriter, message string) {
+func writeForbidden(w http.ResponseWriter, r *http.Request, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
 	if err := json.NewEncoder(w).Encode(map[string]string{
 		"error":   "forbidden",
 		"message": message,
 	}); err != nil {
-		log.Printf("failed to write forbidden response: %v", err)
+		logger.FromContext(r.Context()).Error("auth: failed to write forbidden response", "error", err.Error())
 	}
 }

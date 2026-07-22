@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"sync"
+
+	"api-gateway/internal/logger"
 )
 
 // Proxier forwards a request to the given upstream URL.
@@ -32,7 +33,7 @@ func NewReverseProxier() Proxier {
 func (p *reverseProxier) Proxy(w http.ResponseWriter, r *http.Request, upstream string) {
 	proxy, err := p.proxyFor(upstream)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "bad_gateway", "upstream is misconfigured")
+		writeError(w, r, http.StatusBadGateway, "bad_gateway", "upstream is misconfigured")
 		return
 	}
 	proxy.ServeHTTP(w, r)
@@ -64,11 +65,15 @@ func (p *reverseProxier) proxyFor(upstream string) (*httputil.ReverseProxy, erro
 		// here as a RoundTrip error; report it as a gateway timeout rather
 		// than a generic bad gateway so clients can distinguish the two.
 		if errors.Is(err, context.DeadlineExceeded) {
-			log.Printf("gateway: deadline exceeded calling upstream=%s path=%s", upstream, r.URL.Path)
-			writeError(w, http.StatusGatewayTimeout, "gateway_timeout", "downstream service did not respond in time")
+			logger.FromContext(r.Context()).Warn("gateway: deadline exceeded",
+				"event_type", "timeout",
+				"upstream", upstream,
+				"path", r.URL.Path,
+			)
+			writeError(w, r, http.StatusGatewayTimeout, "gateway_timeout", "downstream service did not respond in time")
 			return
 		}
-		writeError(w, http.StatusBadGateway, "bad_gateway", "upstream unavailable")
+		writeError(w, r, http.StatusBadGateway, "bad_gateway", "upstream unavailable")
 	}
 	p.proxies[upstream] = proxy
 	return proxy, nil

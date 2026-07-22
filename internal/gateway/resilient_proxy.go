@@ -2,11 +2,12 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
+	"api-gateway/internal/logger"
 	"api-gateway/internal/resilience"
 )
 
@@ -79,16 +80,25 @@ func (p *resilientProxier) Proxy(w http.ResponseWriter, r *http.Request, upstrea
 		p.next.Proxy(rec, r, upstream)
 
 		if !resilience.IsRetryableStatus(rec.statusCode) || attempt >= policy.MaxAttempts {
-			rec.flush(w)
+			rec.flush(w, r.Context())
 			return
 		}
 
-		log.Printf("gateway: retrying downstream call upstream=%s attempt=%d status=%d", upstream, attempt, rec.statusCode)
+		logger.FromContext(r.Context()).Info("gateway: retrying downstream call",
+			"event_type", "retry_attempt",
+			"upstream", upstream,
+			"attempt", attempt,
+			"status", rec.statusCode,
+		)
 
 		select {
 		case <-ctx.Done():
-			log.Printf("gateway: deadline exceeded during retry backoff upstream=%s attempt=%d", upstream, attempt)
-			writeError(w, http.StatusGatewayTimeout, "gateway_timeout", "downstream service did not respond in time")
+			logger.FromContext(r.Context()).Warn("gateway: deadline exceeded during retry backoff",
+				"event_type", "timeout",
+				"upstream", upstream,
+				"attempt", attempt,
+			)
+			writeError(w, r, http.StatusGatewayTimeout, "gateway_timeout", "downstream service did not respond in time")
 			return
 		case <-time.After(policy.Backoff(attempt)):
 		}
@@ -130,13 +140,13 @@ func (r *bufferedRecorder) Write(b []byte) (int, error) {
 
 // flush replays the buffered response onto w, the response actually sent
 // to the client.
-func (r *bufferedRecorder) flush(w http.ResponseWriter) {
+func (r *bufferedRecorder) flush(w http.ResponseWriter, ctx context.Context) {
 	dst := w.Header()
 	for k, v := range r.header {
 		dst[k] = v
 	}
 	w.WriteHeader(r.statusCode)
 	if _, err := w.Write(r.body.Bytes()); err != nil {
-		log.Printf("gateway: failed to write proxied response: %v", err)
+		logger.FromContext(ctx).Error("gateway: failed to write proxied response", "error", err.Error())
 	}
 }

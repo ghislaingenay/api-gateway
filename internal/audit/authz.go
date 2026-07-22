@@ -2,22 +2,28 @@
 package audit
 
 import (
-	"log"
+	"context"
+
+	"api-gateway/internal/logger"
 
 	"github.com/google/uuid"
 )
 
 // LogAuthzDecision records an allow/deny authorization decision against a
 // required permission or role, identifying the tenant and user involved.
-//
-// Correlation IDs are intentionally not included here: FEAT-009
-// (Observability) owns correlation ID generation/propagation and has not
-// been implemented yet. Once it lands, callers can thread a correlation ID
-// through without changing this package's dependents.
-func LogAuthzDecision(allowed bool, tenantID, userID uuid.UUID, required string) {
+// event_type is "authz_allow" or "authz_deny" so denials are greppable in
+// aggregated logs (FEAT-009 FR-4). ctx supplies the request's correlation
+// ID via logger.FromContext.
+func LogAuthzDecision(ctx context.Context, allowed bool, tenantID, userID uuid.UUID, required string) {
 	result := "deny"
 	if allowed {
 		result = "allow"
 	}
-	log.Printf("authz decision result=%s tenant_id=%s user_id=%s required=%s", result, tenantID, userID, required)
+	logger.FromContext(ctx).Info("authz decision",
+		"event_type", "authz_"+result,
+		"result", result,
+		"tenant_id", tenantID.String(),
+		"user_id", userID.String(),
+		"required", required,
+	)
 }

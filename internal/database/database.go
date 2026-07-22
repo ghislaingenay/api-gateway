@@ -2,10 +2,11 @@ package database
 
 import (
 	"api-gateway/config"
+	"api-gateway/internal/logger"
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -13,7 +14,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/joho/godotenv/autoload"
 )
-
 
 var appConfig = config.Load()
 
@@ -46,22 +46,23 @@ var (
 	schema     = appConfig.DBSchema
 	sslMode    = appConfig.DBSSLMode
 	dbInstance *service
-	once			 sync.Once
-) 
+	once       sync.Once
+)
 
 func New() Service {
 	// Reuse Connection
 	once.Do(func() {
-    connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s&search_path=%s", username, password, host, port, database, sslMode, schema)
-    db, err := sql.Open("pgx", connStr)
-    if err != nil {
-      log.Fatal(err)
-    }
-    
-    dbInstance = &service{
-      db: db,
-    }
-  })
+		connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s&search_path=%s", username, password, host, port, database, sslMode, schema)
+		db, err := sql.Open("pgx", connStr)
+		if err != nil {
+			logger.Default().Error("database: failed to open connection", "error", err.Error())
+			os.Exit(1)
+		}
+
+		dbInstance = &service{
+			db: db,
+		}
+	})
 	return dbInstance
 }
 
@@ -78,7 +79,8 @@ func (s *service) Health() map[string]string {
 	if err != nil {
 		stats["status"] = "down"
 		stats["error"] = fmt.Sprintf("db down: %v", err)
-		log.Fatalf("db down: %v", err) // Log the error and terminate the program
+		logger.Default().Error("database: down", "error", err.Error())
+		os.Exit(1)
 		return stats
 	}
 
@@ -121,6 +123,6 @@ func (s *service) Health() map[string]string {
 // If the connection is successfully closed, it returns nil.
 // If an error occurs while closing the connection, it returns the error.
 func (s *service) Close() error {
-	log.Printf("Disconnected from database: %s", database)
+	logger.Default().Info("database: disconnected", "database", database)
 	return s.db.Close()
 }
