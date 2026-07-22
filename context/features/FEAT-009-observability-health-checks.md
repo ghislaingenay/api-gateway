@@ -1,10 +1,10 @@
 # FEAT-009: Observability & Health Checks
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-22
 
 Technical Design: [TD-009 - Observability & Health Checks](../technical-designs/TD-009-observability-health-checks.md)
 
@@ -78,9 +78,9 @@ Every incoming request must be assigned a correlation ID (generated if not prese
 
 #### Acceptance Criteria
 
-- [ ] Correlation ID present in every structured log line for a request's lifecycle
-- [ ] Correlation ID returned in response header
-- [ ] Client-supplied correlation ID is honored if present and well-formed
+- [x] Correlation ID present in every structured log line for a request's lifecycle
+- [x] Correlation ID returned in response header
+- [x] Client-supplied correlation ID is honored if present and well-formed
 
 ---
 
@@ -90,8 +90,8 @@ The gateway must expose `GET /health` (liveness, no dependency checks) returning
 
 #### Acceptance Criteria
 
-- [ ] `/health` returns 200 with no auth required
-- [ ] `/health` does not check Redis/Postgres (liveness only)
+- [x] `/health` returns 200 with no auth required
+- [x] `/health` does not check Redis/Postgres (liveness only)
 
 ---
 
@@ -101,9 +101,9 @@ The gateway must expose `GET /ready` (readiness) returning 200 only if Redis and
 
 #### Acceptance Criteria
 
-- [ ] `/ready` returns 200 when both dependencies are healthy
-- [ ] `/ready` returns 503 with dependency status detail when either is unreachable
-- [ ] No auth required
+- [x] `/ready` returns 200 when both dependencies are healthy
+- [x] `/ready` returns 503 with dependency status detail when either is unreachable
+- [x] No auth required
 
 ---
 
@@ -113,8 +113,8 @@ Key lifecycle events across other features must emit structured logs: auth failu
 
 #### Acceptance Criteria
 
-- [ ] Each event type has a distinct, greppable log field (e.g., `event_type`)
-- [ ] Logs are valid JSON, parseable by standard log aggregation tools
+- [x] Each event type has a distinct, greppable log field (e.g., `event_type`)
+- [x] Logs are valid JSON, parseable by standard log aggregation tools
 
 ---
 
@@ -127,10 +127,10 @@ Key lifecycle events across other features must emit structured logs: auth failu
 
 ## Permissions
 
-| Action              | All Callers (including unauthenticated) |
-| --------------------- | ------------------------------------------- |
-| Access `/health`     | ✅                                           |
-| Access `/ready`      | ✅                                           |
+| Action           | All Callers (including unauthenticated) |
+| ---------------- | --------------------------------------- |
+| Access `/health` | ✅                                      |
+| Access `/ready`  | ✅                                      |
 
 ---
 

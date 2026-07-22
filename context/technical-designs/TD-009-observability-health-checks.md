@@ -1,10 +1,10 @@
 # TD-009: Observability & Health Checks
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-22
 
 Feature Spec: [FEAT-009 - Observability & Health Checks](../features/FEAT-009-observability-health-checks.md)
 
