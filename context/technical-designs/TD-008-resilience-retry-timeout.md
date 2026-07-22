@@ -1,10 +1,10 @@
 # TD-008: Resilience (Retry & Timeout)
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-22
 
 Feature Spec: [FEAT-008 - Resilience (Retry & Timeout)](../features/FEAT-008-resilience-retry-timeout.md)
 

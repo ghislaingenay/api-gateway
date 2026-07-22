@@ -9,6 +9,7 @@ import (
 	"api-gateway/internal/ratelimit"
 	"api-gateway/internal/rbac"
 	"api-gateway/internal/refreshtoken"
+	"api-gateway/internal/resilience"
 	"api-gateway/internal/tenant"
 	"api-gateway/internal/user"
 	"context"
@@ -75,6 +76,7 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 
 	rateLimitConfig := config.LoadRateLimitConfig()
 	cacheConfig := config.LoadCacheConfig()
+	resilienceConfig := config.LoadResilienceConfig()
 	validationConfig := config.LoadValidationConfig()
 
 	signer, err := auth.NewSigner(jwtConfig.SigningKID, jwtConfig.SigningPrivateKey)
@@ -90,9 +92,16 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 		jwtAlgorithms: jwtConfig.AllowedAlgorithms,
 		routeTable:    routeTable,
 		tenantStatus:  tenantStatus,
-		proxy:         gateway.NewReverseProxier(),
-		rateLimiter:   ratelimit.NewSlidingWindowLimiter(redisClient),
-		rateLimits:    tenantStatus,
+		proxy: gateway.NewResilientProxier(
+			gateway.NewReverseProxier(),
+			resilienceConfig.DefaultDeadline,
+			resilience.RetryPolicy{
+				MaxAttempts: resilienceConfig.DefaultMaxAttempts,
+				BaseBackoff: resilienceConfig.DefaultBaseBackoff,
+			},
+		),
+		rateLimiter: ratelimit.NewSlidingWindowLimiter(redisClient),
+		rateLimits:  tenantStatus,
 		rateLimitDefs: ratelimit.Defaults{
 			PerMinute: rateLimitConfig.DefaultPerMinute,
 			PerHour:   rateLimitConfig.DefaultPerHour,
@@ -128,6 +137,8 @@ func toGatewayRoutes(entries []config.RouteEntry) []gateway.Route {
 			AuthRequired:        e.AuthRequired,
 			PermissionsRequired: e.PermissionsRequired,
 			CacheTTL:            time.Duration(e.CacheTTLSeconds) * time.Second,
+			Deadline:            time.Duration(e.DeadlineSeconds) * time.Second,
+			RetryMaxAttempts:    e.RetryMaxAttempts,
 			BodySchema:          toBodySchema(e),
 			RequiredParams:      toRequiredParams(e.RequiredParams),
 		}

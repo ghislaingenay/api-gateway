@@ -61,6 +61,10 @@ func NewHandler(routes *RouteTable, statusChecker TenantStatusChecker, proxy Pro
 				writeError(w, http.StatusNotFound, "not_found", "no matching route")
 				return
 			}
+			// Share the resolved route via context so a decorating Proxier
+			// (e.g. the FEAT-008 resilient proxy) can read its per-route
+			// Deadline/RetryMaxAttempts without re-resolving it.
+			r = r.WithContext(WithRoute(r.Context(), route))
 		}
 
 		for _, header := range clientTenantHeaders {

@@ -35,6 +35,12 @@ type RouteEntry struct {
 	// CacheTTLSeconds overrides the gateway's default response-cache TTL for
 	// this route (FEAT-006). Zero/omitted means "no override".
 	CacheTTLSeconds int `json:"cache_ttl_seconds"`
+	// DeadlineSeconds overrides the gateway's default request deadline for
+	// this route (FEAT-008). Zero/omitted means "no override".
+	DeadlineSeconds int `json:"deadline_seconds"`
+	// RetryMaxAttempts overrides the default max retry attempts for GET
+	// requests to this route (FEAT-008). Zero/omitted means "no override".
+	RetryMaxAttempts int `json:"retry_max_attempts"`
 	// BodyRequired rejects an empty body with a 400 when true (FEAT-007).
 	BodyRequired bool `json:"body_required"`
 	// BodyFields are the JSON body fields validated for this route
@@ -66,6 +72,12 @@ func LoadRoutesConfig() ([]RouteEntry, error) {
 	for _, route := range routes {
 		if route.CacheTTLSeconds < 0 {
 			return nil, fmt.Errorf("route %s %s: cache_ttl_seconds must not be negative, got %d", route.Method, route.Path, route.CacheTTLSeconds)
+		}
+		if route.DeadlineSeconds < 0 {
+			return nil, fmt.Errorf("route %s %s: deadline_seconds must not be negative, got %d", route.Method, route.Path, route.DeadlineSeconds)
+		}
+		if route.RetryMaxAttempts < 0 {
+			return nil, fmt.Errorf("route %s %s: retry_max_attempts must not be negative, got %d", route.Method, route.Path, route.RetryMaxAttempts)
 		}
 		for _, p := range route.RequiredParams {
 			if p.In != "query" && p.In != "path" {
