@@ -10,6 +10,6 @@
 | TD-005 | [Distributed Rate Limiting](TD-005-distributed-rate-limiting.md)                           | Done   | [FEAT-005](../features/FEAT-005-distributed-rate-limiting.md)   |
 | TD-006 | [Response Caching](TD-006-response-caching.md)                                             | Done   | [FEAT-006](../features/FEAT-006-response-caching.md)            |
 | TD-007 | [Request Validation](TD-007-request-validation.md)                                         | Draft  | [FEAT-007](../features/FEAT-007-request-validation.md)          |
-| TD-008 | [Resilience (Retry & Timeout)](TD-008-resilience-retry-timeout.md)                         | Draft  | [FEAT-008](../features/FEAT-008-resilience-retry-timeout.md)    |
+| TD-008 | [Resilience (Retry & Timeout)](TD-008-resilience-retry-timeout.md)                         | Done   | [FEAT-008](../features/FEAT-008-resilience-retry-timeout.md)    |
 | TD-009 | [Observability & Health Checks](TD-009-observability-health-checks.md)                     | Draft  | [FEAT-009](../features/FEAT-009-observability-health-checks.md) |
 | TD-010 | [API Documentation & Dev Environment](TD-010-api-docs-dev-environment.md)                  | Draft  | [FEAT-010](../features/FEAT-010-api-docs-dev-environment.md)    |

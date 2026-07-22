@@ -16,6 +16,12 @@ type Route struct {
 	// CacheTTL overrides the gateway's default response-cache TTL for this
 	// route (FEAT-006). Zero means "no override" — the default TTL applies.
 	CacheTTL time.Duration
+	// Deadline overrides the gateway's default request deadline for calls
+	// to this route's upstream (FEAT-008). Zero means "no override".
+	Deadline time.Duration
+	// RetryMaxAttempts overrides the default max retry attempts for GET
+	// requests to this route (FEAT-008). Zero means "no override".
+	RetryMaxAttempts int
 }
 
 // RouteTable resolves the destination Route for an incoming request from a

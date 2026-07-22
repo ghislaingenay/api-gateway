@@ -1,7 +1,10 @@
 package gateway
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -56,7 +59,15 @@ func (p *reverseProxier) proxyFor(upstream string) (*httputil.ReverseProxy, erro
 		return proxy, nil
 	}
 	proxy = httputil.NewSingleHostReverseProxy(target)
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, _ error) {
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		// A canceled/expired request context (FEAT-008 deadline) surfaces
+		// here as a RoundTrip error; report it as a gateway timeout rather
+		// than a generic bad gateway so clients can distinguish the two.
+		if errors.Is(err, context.DeadlineExceeded) {
+			log.Printf("gateway: deadline exceeded calling upstream=%s path=%s", upstream, r.URL.Path)
+			writeError(w, http.StatusGatewayTimeout, "gateway_timeout", "downstream service did not respond in time")
+			return
+		}
 		writeError(w, http.StatusBadGateway, "bad_gateway", "upstream unavailable")
 	}
 	p.proxies[upstream] = proxy
