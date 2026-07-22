@@ -1,10 +1,10 @@
 # TD-010: API Documentation & Dev Environment
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-22
 
 Feature Spec: [FEAT-010 - API Documentation & Dev Environment](../features/FEAT-010-api-docs-dev-environment.md)
 

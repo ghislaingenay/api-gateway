@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"api-gateway/internal/apidocs"
 	"api-gateway/internal/auth"
 	"api-gateway/internal/authhandler"
 	"api-gateway/internal/cache"
@@ -25,6 +26,12 @@ func (s *Server) RegisterRoutes() http.Handler {
 	// limiting, or caching middleware (FEAT-009 Business Rules).
 	mux.Handle("GET /health", health.HealthHandler())
 	mux.Handle("GET /ready", health.ReadyHandler(s.healthChecker))
+
+	// /docs is unauthenticated and excluded from rate limiting, consistent
+	// with /health and /ready — it's a documentation surface with no data
+	// exposure (FEAT-010 TD-010 §7).
+	mux.Handle("GET /docs", apidocs.SwaggerUIHandler())
+	mux.Handle("GET /docs/openapi.yaml", apidocs.OpenAPISpecHandler())
 
 	mux.Handle("GET /roles", s.requirePermission("roles:read", rbac.RolesHandler(s.roleCache)))
 	mux.Handle("GET /permissions", s.requirePermission("roles:read", rbac.PermissionsHandler(s.roleCache)))
