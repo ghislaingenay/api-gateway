@@ -1,10 +1,10 @@
 # FEAT-007: Request Validation
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-21
 
 Technical Design: [TD-007 - Request Validation](../technical-designs/TD-007-request-validation.md)
 
@@ -111,9 +111,9 @@ Validation errors must be returned in a consistent JSON error format across all 
 
 ## Permissions
 
-| Action                     | All Authenticated Clients |
-| ---------------------------- | ---------------------------- |
-| Requests subject to validation | ✅                          |
+| Action                         | All Authenticated Clients |
+| ------------------------------ | ------------------------- |
+| Requests subject to validation | ✅                        |
 
 ---
 

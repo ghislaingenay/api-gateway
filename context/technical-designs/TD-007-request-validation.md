@@ -1,10 +1,10 @@
 # TD-007: Request Validation
 
-Status: Draft
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-07-14
-Last Updated: 2026-07-14
+Last Updated: 2026-07-21
 
 Feature Spec: [FEAT-007 - Request Validation](../features/FEAT-007-request-validation.md)
 

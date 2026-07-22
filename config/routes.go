@@ -6,6 +6,24 @@ import (
 	"os"
 )
 
+// BodyFieldEntry is one JSON body field validation rule in a route's
+// configured schema (FEAT-007).
+type BodyFieldEntry struct {
+	Field string `json:"field"`
+	// Rule is a go-playground validator tag string, e.g. "required,email".
+	Rule string `json:"rule"`
+}
+
+// RequiredParamEntry is one required path/query parameter validation rule
+// in a route's configured schema (FEAT-007).
+type RequiredParamEntry struct {
+	Name string `json:"name"`
+	// In is "query" or "path".
+	In string `json:"in"`
+	// Rule is a go-playground validator tag string, e.g. "required,uuid4".
+	Rule string `json:"rule"`
+}
+
 // RouteEntry is one row of the gateway's static path-to-service
 // configuration table.
 type RouteEntry struct {

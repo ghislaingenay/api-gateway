@@ -9,7 +9,7 @@
 | FEAT-004 | [Multi-Tenant Isolation & Routing](FEAT-004-multi-tenant-routing.md)                         | Done   | [TD-004](../technical-designs/TD-004-multi-tenant-routing.md)        |
 | FEAT-005 | [Distributed Rate Limiting](FEAT-005-distributed-rate-limiting.md)                           | Done   | [TD-005](../technical-designs/TD-005-distributed-rate-limiting.md)   |
 | FEAT-006 | [Response Caching](FEAT-006-response-caching.md)                                             | Done   | [TD-006](../technical-designs/TD-006-response-caching.md)            |
-| FEAT-007 | [Request Validation](FEAT-007-request-validation.md)                                         | Draft  | [TD-007](../technical-designs/TD-007-request-validation.md)          |
+| FEAT-007 | [Request Validation](FEAT-007-request-validation.md)                                         | Done   | [TD-007](../technical-designs/TD-007-request-validation.md)          |
 | FEAT-008 | [Resilience (Retry & Timeout)](FEAT-008-resilience-retry-timeout.md)                         | Done   | [TD-008](../technical-designs/TD-008-resilience-retry-timeout.md)    |
 | FEAT-009 | [Observability & Health Checks](FEAT-009-observability-health-checks.md)                     | Draft  | [TD-009](../technical-designs/TD-009-observability-health-checks.md) |
 | FEAT-010 | [API Documentation & Dev Environment](FEAT-010-api-docs-dev-environment.md)                  | Draft  | [TD-010](../technical-designs/TD-010-api-docs-dev-environment.md)    |
