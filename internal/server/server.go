@@ -98,7 +98,7 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 		tenantStatus:  tenantStatus,
 		proxy: gateway.NewResilientProxier(
 			gateway.NewReverseProxier(),
-			resilienceConfig.DefaultDeadline,
+			resilienceConfig.DefaultTimeout,
 			resilience.RetryPolicy{
 				MaxAttempts: resilienceConfig.DefaultMaxAttempts,
 				BaseBackoff: resilienceConfig.DefaultBaseBackoff,
@@ -142,7 +142,7 @@ func toGatewayRoutes(entries []config.RouteEntry) []gateway.Route {
 			AuthRequired:        e.AuthRequired,
 			PermissionsRequired: e.PermissionsRequired,
 			CacheTTL:            time.Duration(e.CacheTTLSeconds) * time.Second,
-			Deadline:            time.Duration(e.DeadlineSeconds) * time.Second,
+			Deadline:            time.Duration(e.TimeoutSeconds) * time.Second,
 			RetryMaxAttempts:    e.RetryMaxAttempts,
 			BodySchema:          toBodySchema(e),
 			RequiredParams:      toRequiredParams(e.RequiredParams),

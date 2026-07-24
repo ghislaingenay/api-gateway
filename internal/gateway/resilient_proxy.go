@@ -18,24 +18,24 @@ import (
 // context so a slow downstream call is still aborted with a 504.
 type resilientProxier struct {
 	next               Proxier
-	defaultDeadline    time.Duration
+	DefaultTimeout    time.Duration
 	defaultRetryPolicy resilience.RetryPolicy
 }
 
 // NewResilientProxier wraps next with deadline enforcement and GET-only
-// retry logic. defaultDeadline and defaultRetryPolicy apply to routes with
+// retry logic. DefaultTimeout and defaultRetryPolicy apply to routes with
 // no per-route override.
-func NewResilientProxier(next Proxier, defaultDeadline time.Duration, defaultRetryPolicy resilience.RetryPolicy) Proxier {
+func NewResilientProxier(next Proxier, DefaultTimeout time.Duration, defaultRetryPolicy resilience.RetryPolicy) Proxier {
 	return &resilientProxier{
 		next:               next,
-		defaultDeadline:    defaultDeadline,
+		DefaultTimeout:    DefaultTimeout,
 		defaultRetryPolicy: defaultRetryPolicy,
 	}
 }
 
 // Proxy implements Proxier.
 func (p *resilientProxier) Proxy(w http.ResponseWriter, r *http.Request, upstream string) {
-	deadline := p.defaultDeadline
+	deadline := p.DefaultTimeout
 	policy := p.defaultRetryPolicy
 
 	if route, ok := RouteFromContext(r.Context()); ok && route != nil {
