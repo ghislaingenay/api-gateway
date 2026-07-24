@@ -50,7 +50,7 @@ type Server struct {
 
 func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 	port, _ := strconv.Atoi(os.Getenv("PORT"))
-	dbService := database.New()
+	dbService := database.New(config.LoadDatabaseConfig())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"api-gateway/internal/logger"
 	"os"
 	"strings"
 )
@@ -42,9 +43,20 @@ func LoadJWTConfig() *JWTConfig {
 	signingKID := strings.TrimSpace(os.Getenv("JWT_SIGNING_KID"))
 	signingPrivateKey := strings.TrimSpace(os.Getenv("JWT_SIGNING_PRIVATE_KEY"))
 
+	if signingKID == "" || signingPrivateKey == "" {
+		logger.Default().Warn("JWT_SIGNING_KID or JWT_SIGNING_PRIVATE_KEY is empty, signing keys will not be available for issuing new tokens")
+		return &JWTConfig{
+			AllowedAlgorithms: allowed,
+			SigningKeys:       nil,
+			SigningKID:        signingKID,
+			SigningPrivateKey: signingPrivateKey,
+		}
+	}
+
 	keys := make(map[string]string)
 	jwtSigningKeys := os.Getenv("JWT_SIGNING_KEYS")
 	if strings.TrimSpace(jwtSigningKeys) == "" {
+		logger.Default().Warn("JWT_SIGNING_KEYS is empty, signing keys will not be available for validation")
 		return &JWTConfig{
 			AllowedAlgorithms: allowed,
 			SigningKeys:       keys,

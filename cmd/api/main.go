@@ -20,17 +20,19 @@ import (
 // App is a central struct that holds your dependencies.
 // This prevents you from needing global variables.
 type App struct {
-	Config *config.Config
+	Config *config.AppConfig
 	Redis  *redis.Client
 	Db     database.Service
 }
 
 func main() {
 	// 1. Load Configuration
-	cfg := config.Load()
+	cfg := config.LoadAppConfig()
+	redisCfg := config.LoadRedisConfig()
+	dbCfg := config.LoadDatabaseConfig()
 
 	// 2. Initialize Redis
-	redisClient, err := cache.NewRedisClient(cfg.RedisURL)
+	redisClient, err := cache.NewRedisClient(redisCfg.RedisURL)
 	if err != nil {
 		logger.Default().Error("api: could not connect to redis", "error", err.Error())
 		os.Exit(1)
@@ -39,7 +41,7 @@ func main() {
 	logger.Default().Info("api: redis connected successfully")
 
 	// 3. Initialize Database
-	dbService := database.New()
+	dbService := database.New(dbCfg)
 	defer dbService.Close()
 	logger.Default().Info("api: database connected successfully")
 

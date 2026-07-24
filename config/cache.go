@@ -2,8 +2,7 @@ package config
 
 import "time"
 
-// DefaultCacheTTLSeconds is the fallback TTL for cacheable GET routes that
-// have no per-route CacheTTLSeconds override (FEAT-006 Open Questions).
+// DefaultCacheTTLSeconds is the fallback TTL for cacheable GET routes
 const DefaultCacheTTLSeconds = 60
 
 // CacheConfig holds the default response-cache TTL applied when a route has
@@ -12,10 +11,6 @@ type CacheConfig struct {
 	DefaultTTL time.Duration
 }
 
-// LoadCacheConfig reads the response-cache default TTL from the environment.
-//
-// CACHE_DEFAULT_TTL_SECONDS defaults to DefaultCacheTTLSeconds when unset or
-// not a positive integer.
 func LoadCacheConfig() *CacheConfig {
 	return &CacheConfig{
 		DefaultTTL: time.Duration(positiveIntEnv("CACHE_DEFAULT_TTL_SECONDS", DefaultCacheTTLSeconds)) * time.Second,

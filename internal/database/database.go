@@ -15,8 +15,6 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 )
 
-var appConfig = config.Load()
-
 // Service represents a service that interacts with a database.
 type Service interface {
 	// Health returns a map of health status information.
@@ -30,7 +28,8 @@ type Service interface {
 }
 
 type service struct {
-	db *sql.DB
+	db       *sql.DB
+	database string
 }
 
 func (s *service) GetDB() *sql.DB {
@@ -38,29 +37,22 @@ func (s *service) GetDB() *sql.DB {
 }
 
 var (
-	database   = appConfig.DBDatabase
-	password   = appConfig.DBPassword
-	username   = appConfig.DBUser
-	port       = appConfig.DBPort
-	host       = appConfig.DBHost
-	schema     = appConfig.DBSchema
-	sslMode    = appConfig.DBSSLMode
 	dbInstance *service
 	once       sync.Once
 )
 
-func New() Service {
+func New(cfg *config.DatabaseConfig) Service {
 	// Reuse Connection
 	once.Do(func() {
-		connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s&search_path=%s", username, password, host, port, database, sslMode, schema)
-		db, err := sql.Open("pgx", connStr)
+		db, err := sql.Open("pgx", cfg.ConnectionString())
 		if err != nil {
 			logger.Default().Error("database: failed to open connection", "error", err.Error())
 			os.Exit(1)
 		}
 
 		dbInstance = &service{
-			db: db,
+			db:       db,
+			database: cfg.DBDatabase,
 		}
 	})
 	return dbInstance
@@ -123,6 +115,6 @@ func (s *service) Health() map[string]string {
 // If the connection is successfully closed, it returns nil.
 // If an error occurs while closing the connection, it returns the error.
 func (s *service) Close() error {
-	logger.Default().Info("database: disconnected", "database", database)
+	logger.Default().Info("database: disconnected", "database", s.database)
 	return s.db.Close()
 }
