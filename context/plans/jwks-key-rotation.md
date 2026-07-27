@@ -11,6 +11,20 @@ this as a deliberate MVP simplification ("No KMS/JWKS integration for MVP")
 but already anticipated JWKS as the natural next step (section 8: "Public
 keys/JWKS cached in memory ... on rotation events").
 
+**Known bug in the current static implementation** (found in code review,
+2026-07-27): `config.LoadJWTConfig` (`config/jwt.go:46-54`) returns early —
+skipping `JWT_SIGNING_KEYS` parsing entirely, leaving `SigningKeys: nil` —
+whenever `JWT_SIGNING_KID`/`JWT_SIGNING_PRIVATE_KEY` (used only for *issuing*
+new tokens) are unset. Since `auth.NewKeyStore` treats an empty `SigningKeys`
+map as fatal and `internal/server/server.go` calls `os.Exit(1)` on that
+error, **any instance without an issuing key configured fails to start even
+if `JWT_SIGNING_KEYS` is fully populated for verification** — the two
+concerns (issuing vs. verifying) are supposed to be independent per the
+field's own doc comment but are currently coupled by this early return. This
+migration removes `SigningKeys`/`JWT_SIGNING_KEYS` entirely, which makes the
+bug moot once JWKS lands — see Open Questions below for how to handle the
+interim window.
+
 We're replacing the static store with a JWKS-backed store: the auth server
 publishes its public keys at a `/.well-known/jwks.json`-style URL, and the
 gateway fetches/caches/refreshes them automatically, keyed by `kid`. This
@@ -109,6 +123,17 @@ wired in today either; that's a separate follow-up).
 - Building the JWKS-publishing side (that lives on the auth/identity server,
   not this gateway).
 - Any static-key fallback/dev-mode path.
+
+## Open Questions
+
+- Should the static-key startup bug (see Context) be hotfixed independently
+  before this migration lands, given it can currently crash any instance
+  that hasn't configured an issuing key? Or is it acceptable to leave it
+  as-is on the assumption this migration ships soon enough to subsume it?
+- If hotfixed first: does fixing `LoadJWTConfig` to parse `JWT_SIGNING_KEYS`
+  unconditionally (decoupling it from the issuing-key check) create any
+  merge friction with this plan's removal of `SigningKeys` entirely, or is
+  it a clean throwaway fix on a field this migration deletes anyway?
 
 ## Verification
 

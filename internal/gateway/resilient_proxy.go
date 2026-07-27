@@ -11,35 +11,31 @@ import (
 	"api-gateway/internal/resilience"
 )
 
-type ResilientProxier interface {
-	Proxy(w http.ResponseWriter, r *http.Request, upstream string)
-}
-
-// resilientProxier decorates a Proxier with a per-route deadline
+// resilientProxier decorates a Proxier with a per-route timeout
 // (FEAT-008 FR-2/FR-3) and, for idempotent (GET) requests, exponential
 // backoff retries on transient downstream failures (FEAT-008 FR-1). Non-GET
-// requests are never retried, but still run under the deadline-bound
+// requests are never retried, but still run under the timeout-bound
 // context so a slow downstream call is still aborted with a 504.
 type resilientProxier struct {
 	next               Proxier
-	DefaultTimeout     time.Duration
+	defaultTimeout     time.Duration
 	defaultRetryPolicy resilience.RetryPolicy
 }
 
-// NewResilientProxier wraps next with deadline enforcement and GET-only
-// retry logic. DefaultTimeout and defaultRetryPolicy apply to routes with
+// NewResilientProxier wraps next with timeout enforcement and GET-only
+// retry logic. defaultTimeout and defaultRetryPolicy apply to routes with
 // no per-route override.
-func NewResilientProxier(next Proxier, DefaultTimeout time.Duration, defaultRetryPolicy resilience.RetryPolicy) Proxier {
+func NewResilientProxier(next Proxier, defaultTimeout time.Duration, defaultRetryPolicy resilience.RetryPolicy) Proxier {
 	return &resilientProxier{
 		next:               next,
-		DefaultTimeout:     DefaultTimeout,
+		defaultTimeout:     defaultTimeout,
 		defaultRetryPolicy: defaultRetryPolicy,
 	}
 }
 
 // Proxy implements Proxier.
 func (p *resilientProxier) Proxy(w http.ResponseWriter, r *http.Request, upstream string) {
-	timeout := p.DefaultTimeout
+	timeout := p.defaultTimeout
 	policy := p.defaultRetryPolicy
 
 	if route, ok := RouteFromContext(r.Context()); ok && route != nil {

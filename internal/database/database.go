@@ -84,7 +84,7 @@ func (s *service) Health() HealthStats {
 	}
 
 	dbStats := s.db.Stats()
-	
+
 	stats := HealthStats{
 		Status:            "up",
 		Message:           "It's healthy",
@@ -99,18 +99,18 @@ func (s *service) Health() HealthStats {
 
 	// Use consecutive if statements and append to a slice
 	// This way, if 3 things are wrong, you see all 3 warnings in your monitoring tools.
-	if dbStats.OpenConnections > 40 { 
+	if dbStats.OpenConnections > 40 {
 		stats.Warnings = append(stats.Warnings, "The database is experiencing heavy load.")
-	} 
-	
+	}
+
 	if dbStats.WaitCount > 1000 {
 		stats.Warnings = append(stats.Warnings, "The database has a high number of wait events, indicating potential bottlenecks.")
-	} 
-	
+	}
+
 	if dbStats.MaxIdleClosed > int64(dbStats.OpenConnections)/2 {
 		stats.Warnings = append(stats.Warnings, "Many idle connections are being closed, consider revising the connection pool settings.")
-	} 
-	
+	}
+
 	if dbStats.MaxLifetimeClosed > int64(dbStats.OpenConnections)/2 {
 		stats.Warnings = append(stats.Warnings, "Many connections are being closed due to max lifetime, consider increasing max lifetime or revising the connection usage pattern.")
 	}

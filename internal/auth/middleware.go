@@ -53,8 +53,8 @@ func JWTAuthMiddleware(keyStore KeyStore, allowedAlgorithms []string) func(http.
 	}
 }
 
-// Get authorization header and parse out the bearer token. Returns an error if the
-// header is missing or malformed.
+// bearerToken extracts the bearer token from the Authorization header,
+// returning an error if the header is missing or malformed.
 func bearerToken(r *http.Request) (string, error) {
 	header := r.Header.Get("Authorization")
 	if header == "" {

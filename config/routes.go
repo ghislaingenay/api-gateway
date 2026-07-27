@@ -35,9 +35,9 @@ type RouteEntry struct {
 	// CacheTTLSeconds overrides the gateway's default response-cache TTL for
 	// this route (FEAT-006). Zero/omitted means "no override".
 	CacheTTLSeconds int `json:"cache_ttl_seconds"`
-	// TimeoutSeconds overrides the gateway's default request deadline for
+	// TimeoutSeconds overrides the gateway's default request timeout for
 	// this route (FEAT-008). Zero/omitted means "no override".
-	TimeoutSeconds int `json:"deadline_seconds"`
+	TimeoutSeconds int `json:"timeout_seconds"`
 	// RetryMaxAttempts overrides the default max retry attempts for GET
 	// requests to this route (FEAT-008). Zero/omitted means "no override".
 	RetryMaxAttempts int `json:"retry_max_attempts"`
@@ -74,7 +74,7 @@ func LoadRoutesConfig() ([]RouteEntry, error) {
 			return nil, fmt.Errorf("route %s %s: cache_ttl_seconds must not be negative, got %d", route.Method, route.Path, route.CacheTTLSeconds)
 		}
 		if route.TimeoutSeconds < 0 {
-			return nil, fmt.Errorf("route %s %s: deadline_seconds must not be negative, got %d", route.Method, route.Path, route.TimeoutSeconds)
+			return nil, fmt.Errorf("route %s %s: timeout_seconds must not be negative, got %d", route.Method, route.Path, route.TimeoutSeconds)
 		}
 		if route.RetryMaxAttempts < 0 {
 			return nil, fmt.Errorf("route %s %s: retry_max_attempts must not be negative, got %d", route.Method, route.Path, route.RetryMaxAttempts)

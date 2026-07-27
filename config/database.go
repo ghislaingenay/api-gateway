@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 type DatabaseConfig struct {
 	DBHost             string
@@ -20,21 +23,31 @@ const (
 	DefaultDbSchema           = "public"
 )
 
+// quoteConnValue single-quotes a libpq keyword/value pair's value, escaping
+// backslashes and embedded single quotes, so values containing whitespace or
+// special characters (e.g. a password with a space) don't corrupt or
+// truncate the connection string.
+func quoteConnValue(v string) string {
+	v = strings.ReplaceAll(v, `\`, `\\`)
+	v = strings.ReplaceAll(v, `'`, `\'`)
+	return "'" + v + "'"
+}
+
 func (c *DatabaseConfig) ConnectionString() string {
 	// Build the connection string for PostgreSQL
-	connStr := "host=" + c.DBHost +
-		" port=" + c.DBPort +
-		" user=" + c.DBUser +
-		" password=" + c.DBPassword +
-		" dbname=" + c.DBDatabase +
-		" sslmode=" + c.DBSSLMode
+	connStr := "host=" + quoteConnValue(c.DBHost) +
+		" port=" + quoteConnValue(c.DBPort) +
+		" user=" + quoteConnValue(c.DBUser) +
+		" password=" + quoteConnValue(c.DBPassword) +
+		" dbname=" + quoteConnValue(c.DBDatabase) +
+		" sslmode=" + quoteConnValue(c.DBSSLMode)
 
 	if c.DBSchema != "" {
-		connStr += " search_path=" + c.DBSchema
+		connStr += " search_path=" + quoteConnValue(c.DBSchema)
 	}
 
 	if c.DBPGChannelBinding != "" {
-		connStr += " channel_binding=" + c.DBPGChannelBinding
+		connStr += " channel_binding=" + quoteConnValue(c.DBPGChannelBinding)
 	}
 
 	return connStr

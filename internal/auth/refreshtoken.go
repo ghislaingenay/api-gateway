@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 )
 
 const refreshTokenBytes = 32
@@ -15,7 +16,7 @@ const refreshTokenBytes = 32
 func GenerateRefreshToken() (raw string, hash string, err error) {
 	buf := make([]byte, refreshTokenBytes)
 	if _, err := rand.Read(buf); err != nil {
-		return "", "", ErrGeneratingRefreshToken
+		return "", "", fmt.Errorf("%w: %v", ErrGeneratingRefreshToken, err)
 	}
 	raw = base64.RawURLEncoding.EncodeToString(buf)
 	return raw, HashRefreshToken(raw), nil

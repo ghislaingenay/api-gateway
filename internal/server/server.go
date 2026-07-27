@@ -15,7 +15,6 @@ import (
 	"api-gateway/internal/tenant"
 	"api-gateway/internal/user"
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
@@ -48,7 +47,7 @@ type Server struct {
 	signer                 auth.Signer
 }
 
-func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
+func NewServer(redisClient *redis.Client) *http.Server {
 	port, _ := strconv.Atoi(os.Getenv("PORT"))
 	dbService := database.New(config.LoadDatabaseConfig())
 
