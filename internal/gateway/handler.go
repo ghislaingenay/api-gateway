@@ -63,7 +63,7 @@ func NewHandler(routes *RouteTable, statusChecker TenantStatusChecker, proxy Pro
 			}
 			// Share the resolved route via context so a decorating Proxier
 			// (e.g. the FEAT-008 resilient proxy) can read its per-route
-			// Deadline/RetryMaxAttempts without re-resolving it.
+			// Timeout/RetryMaxAttempts without re-resolving it.
 			r = r.WithContext(WithRoute(r.Context(), route))
 		}
 

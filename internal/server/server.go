@@ -142,7 +142,7 @@ func toGatewayRoutes(entries []config.RouteEntry) []gateway.Route {
 			AuthRequired:        e.AuthRequired,
 			PermissionsRequired: e.PermissionsRequired,
 			CacheTTL:            time.Duration(e.CacheTTLSeconds) * time.Second,
-			Deadline:            time.Duration(e.TimeoutSeconds) * time.Second,
+			Timeout:             time.Duration(e.TimeoutSeconds) * time.Second,
 			RetryMaxAttempts:    e.RetryMaxAttempts,
 			BodySchema:          toBodySchema(e),
 			RequiredParams:      toRequiredParams(e.RequiredParams),

@@ -137,12 +137,12 @@ func TestResilientProxier_Proxy(t *testing.T) {
 		}
 	})
 
-	t.Run("per-route Deadline and RetryMaxAttempts override defaults", func(t *testing.T) {
+	t.Run("per-route Timeout and RetryMaxAttempts override defaults", func(t *testing.T) {
 		t.Parallel()
 		inner := &scriptedProxier{statuses: []int{http.StatusBadGateway, http.StatusBadGateway}}
 		p := NewResilientProxier(inner, time.Second, resilience.RetryPolicy{MaxAttempts: 5, BaseBackoff: time.Millisecond})
 
-		route := &Route{RetryMaxAttempts: 1, Deadline: time.Second}
+		route := &Route{RetryMaxAttempts: 1, Timeout: time.Second}
 		req := httptest.NewRequest(http.MethodGet, "/api/orders/1", nil)
 		req = req.WithContext(WithRoute(req.Context(), route))
 		rec := httptest.NewRecorder()
