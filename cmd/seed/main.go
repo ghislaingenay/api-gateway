@@ -33,12 +33,12 @@ var seedUsers = []seedUser{
 }
 
 func main() {
-	if !config.IsDevelopmentMode() {
+	if !config.LoadAppConfig().IsDevelopmentMode() {
 		logger.Default().Error("seed: refusing to run outside APP_ENV=development")
 		os.Exit(1)
 	}
 
-	dbService := database.New()
+	dbService := database.New(config.LoadDatabaseConfig())
 	defer dbService.Close()
 	db := dbService.GetDB()
 	ctx := context.Background()

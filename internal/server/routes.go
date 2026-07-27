@@ -6,7 +6,6 @@ import (
 
 	"api-gateway/internal/apidocs"
 	"api-gateway/internal/auth"
-	"api-gateway/internal/authhandler"
 	"api-gateway/internal/cache"
 	"api-gateway/internal/gateway"
 	"api-gateway/internal/health"
@@ -36,10 +35,10 @@ func (s *Server) RegisterRoutes() http.Handler {
 	mux.Handle("GET /roles", s.requirePermission("roles:read", rbac.RolesHandler(s.roleCache)))
 	mux.Handle("GET /permissions", s.requirePermission("roles:read", rbac.PermissionsHandler(s.roleCache)))
 
-	mux.Handle("POST /auth/login", authhandler.LoginHandler(s.userRepo, s.tenantRepo, s.refreshTokens, s.roleCache, s.signer))
-	mux.Handle("POST /auth/refresh", authhandler.RefreshHandler(s.refreshTokens, s.userRepo, s.roleCache, s.signer))
-	mux.Handle("POST /auth/logout", s.requireAuth(authhandler.LogoutHandler(s.refreshTokens)))
-	mux.Handle("GET /auth/me", s.requireAuth(authhandler.MeHandler(s.userRepo, s.roleCache)))
+	mux.Handle("POST /auth/login", auth.LoginHandler(s.userRepo, s.tenantRepo, s.refreshTokens, s.roleCache, s.signer))
+	mux.Handle("POST /auth/refresh", auth.RefreshHandler(s.refreshTokens, s.userRepo, s.roleCache, s.signer))
+	mux.Handle("POST /auth/logout", s.requireAuth(auth.LogoutHandler(s.refreshTokens)))
+	mux.Handle("GET /auth/me", s.requireAuth(auth.MeHandler(s.userRepo, s.roleCache)))
 
 	mux.Handle("/api/", auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(
 		validation.ValidationMiddleware(s.routeTable, s.validationMaxBodyBytes)(

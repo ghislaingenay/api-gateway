@@ -8,7 +8,6 @@ import (
 	"fmt"
 )
 
-// refreshTokenBytes is the amount of entropy in a generated refresh token.
 const refreshTokenBytes = 32
 
 // GenerateRefreshToken returns a fresh opaque refresh token: raw is the
@@ -17,7 +16,7 @@ const refreshTokenBytes = 32
 func GenerateRefreshToken() (raw string, hash string, err error) {
 	buf := make([]byte, refreshTokenBytes)
 	if _, err := rand.Read(buf); err != nil {
-		return "", "", fmt.Errorf("generate refresh token: %w", err)
+		return "", "", fmt.Errorf("%w: %v", ErrGeneratingRefreshToken, err)
 	}
 	raw = base64.RawURLEncoding.EncodeToString(buf)
 	return raw, HashRefreshToken(raw), nil

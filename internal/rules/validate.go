@@ -1,4 +1,8 @@
-package validation
+// Package rules provides struct/value validation via go-playground/validator
+// tags, including custom tags (slug, timezone) shared across the codebase.
+// It has no dependency on gateway, so packages like auth that need generic
+// validation can depend on it without risking an import cycle.
+package rules
 
 import (
 	"sync"
@@ -34,7 +38,6 @@ func getValidator() (*validator.Validate, error) {
 	return instance, initErr
 }
 
-
 // validateSlug allows lowercase letters, digits, and hyphens, and must not
 // start or end with a hyphen.
 func validateSlug(fl validator.FieldLevel) bool {
@@ -59,7 +62,7 @@ func validateTimezone(fl validator.FieldLevel) bool {
 	return err == nil
 }
 
-
+// Validate validates a struct's fields against its `validate` tags.
 func Validate(s interface{}) error {
 	validate, err := getValidator()
 	if err != nil {
@@ -68,15 +71,13 @@ func Validate(s interface{}) error {
 	return validate.Struct(s)
 }
 
-// validateVar validates a single value against a validator tag string
-// (e.g. "required,email"), used by the request validation middleware to
-// check body fields and path/query parameters that aren't backed by a Go
-// struct.
-func validateVar(value interface{}, tag string) error {
+// Var validates a single value against a validator tag string (e.g.
+// "required,email"), used to check body fields and path/query parameters
+// that aren't backed by a Go struct.
+func Var(value interface{}, tag string) error {
 	validate, err := getValidator()
 	if err != nil {
 		return err
 	}
 	return validate.Var(value, tag)
 }
-

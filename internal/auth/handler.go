@@ -1,4 +1,4 @@
-package authhandler
+package auth
 
 import (
 	"context"
@@ -7,13 +7,12 @@ import (
 	"net/http"
 	"time"
 
-	"api-gateway/internal/auth"
 	"api-gateway/internal/logger"
 	"api-gateway/internal/rbac"
 	"api-gateway/internal/refreshtoken"
+	"api-gateway/internal/rules"
 	"api-gateway/internal/tenant"
 	"api-gateway/internal/user"
-	"api-gateway/internal/validation"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -25,14 +24,14 @@ const (
 )
 
 // LoginHandler returns an http.HandlerFunc for POST /auth/login.
-func LoginHandler(users user.Repository, tenants tenant.Repository, refreshTokens refreshtoken.Repository, roles rbac.RoleCache, signer auth.Signer) http.HandlerFunc {
+func LoginHandler(users user.Repository, tenants tenant.Repository, refreshTokens refreshtoken.Repository, roles rbac.RoleCache, signer Signer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req LoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, r, http.StatusBadRequest, "invalid_request", "malformed request body")
 			return
 		}
-		if err := validation.Validate(req); err != nil {
+		if err := rules.Validate(req); err != nil {
 			writeError(w, r, http.StatusBadRequest, "invalid_request", "email, password, and tenant_slug are required")
 			return
 		}
@@ -54,7 +53,7 @@ func LoginHandler(users user.Repository, tenants tenant.Repository, refreshToken
 			writeInvalidCredentials(w, r)
 			return
 		}
-		if err := auth.ComparePassword(u.PasswordHash, req.Password); err != nil {
+		if err := ComparePassword(u.PasswordHash, req.Password); err != nil {
 			writeInvalidCredentials(w, r)
 			return
 		}
@@ -82,21 +81,21 @@ func LoginHandler(users user.Repository, tenants tenant.Repository, refreshToken
 }
 
 // RefreshHandler returns an http.HandlerFunc for POST /auth/refresh.
-func RefreshHandler(refreshTokens refreshtoken.Repository, users user.Repository, roles rbac.RoleCache, signer auth.Signer) http.HandlerFunc {
+func RefreshHandler(refreshTokens refreshtoken.Repository, users user.Repository, roles rbac.RoleCache, signer Signer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req RefreshRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, r, http.StatusBadRequest, "invalid_request", "malformed request body")
 			return
 		}
-		if err := validation.Validate(req); err != nil {
+		if err := rules.Validate(req); err != nil {
 			writeError(w, r, http.StatusBadRequest, "invalid_request", "refresh_token is required")
 			return
 		}
 
 		ctx := r.Context()
 
-		existing, err := refreshTokens.GetByHash(ctx, auth.HashRefreshToken(req.RefreshToken))
+		existing, err := refreshTokens.GetByHash(ctx, HashRefreshToken(req.RefreshToken))
 		if err != nil {
 			writeInvalidToken(w, r)
 			return
@@ -147,13 +146,13 @@ func LogoutHandler(refreshTokens refreshtoken.Repository) http.HandlerFunc {
 			writeError(w, r, http.StatusBadRequest, "invalid_request", "malformed request body")
 			return
 		}
-		if err := validation.Validate(req); err != nil {
+		if err := rules.Validate(req); err != nil {
 			writeError(w, r, http.StatusBadRequest, "invalid_request", "refresh_token is required")
 			return
 		}
 
 		ctx := r.Context()
-		existing, err := refreshTokens.GetByHash(ctx, auth.HashRefreshToken(req.RefreshToken))
+		existing, err := refreshTokens.GetByHash(ctx, HashRefreshToken(req.RefreshToken))
 		if err == nil {
 			if err := refreshTokens.Revoke(ctx, existing.ID); err != nil {
 				logger.FromContext(ctx).Error("authhandler: logout: revoke token", "error", err.Error())
@@ -172,7 +171,7 @@ func LogoutHandler(refreshTokens refreshtoken.Repository) http.HandlerFunc {
 // claims).
 func MeHandler(users user.Repository, roles rbac.RoleCache) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := auth.ClaimsFromContext(r.Context())
+		claims, ok := ClaimsFromContext(r.Context())
 		if !ok || claims == nil {
 			writeError(w, r, http.StatusUnauthorized, "unauthorized", "invalid or missing token")
 			return
@@ -196,9 +195,9 @@ func MeHandler(users user.Repository, roles rbac.RoleCache) http.HandlerFunc {
 
 // issueTokenPair signs a new access token and generates+stores a new
 // refresh token for u.
-func issueTokenPair(ctx context.Context, refreshTokens refreshtoken.Repository, signer auth.Signer, u user.User, role rbac.Role) (LoginResponse, error) {
+func issueTokenPair(ctx context.Context, refreshTokens refreshtoken.Repository, signer Signer, u user.User, role rbac.Role) (LoginResponse, error) {
 	now := time.Now()
-	claims := auth.CustomClaims{
+	claims := CustomClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   u.ID.String(),
 			ExpiresAt: jwt.NewNumericDate(now.Add(accessTokenTTL)),
@@ -218,7 +217,7 @@ func issueTokenPair(ctx context.Context, refreshTokens refreshtoken.Repository, 
 		return LoginResponse{}, err
 	}
 
-	rawRefresh, hashedRefresh, err := auth.GenerateRefreshToken()
+	rawRefresh, hashedRefresh, err := GenerateRefreshToken()
 	if err != nil {
 		return LoginResponse{}, err
 	}

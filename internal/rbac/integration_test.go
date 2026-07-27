@@ -23,9 +23,9 @@ type testDBService struct {
 	db *sql.DB
 }
 
-func (s *testDBService) GetDB() *sql.DB            { return s.db }
-func (s *testDBService) Health() map[string]string { return nil }
-func (s *testDBService) Close() error              { return s.db.Close() }
+func (s *testDBService) GetDB() *sql.DB               { return s.db }
+func (s *testDBService) Health() database.HealthStats { return database.HealthStats{} }
+func (s *testDBService) Close() error                 { return s.db.Close() }
 
 func mustStartMigratedPostgres(t *testing.T) database.Service {
 	t.Helper()

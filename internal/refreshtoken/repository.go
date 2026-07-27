@@ -58,8 +58,8 @@ func (r *postgresRepository) GetByHash(ctx context.Context, hash string) (*Refre
 // Revoke implements Repository.
 func (r *postgresRepository) Revoke(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.ExecContext(ctx, `
-		UPDATE refresh_tokens SET revoked_at = $2 WHERE id = $1
-	`, id, time.Now())
+		UPDATE refresh_tokens SET revoked_at = $1 WHERE id = $2
+	`, time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("revoke refresh token: %w", err)
 	}

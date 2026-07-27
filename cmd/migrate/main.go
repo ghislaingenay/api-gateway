@@ -7,12 +7,13 @@ package main
 import (
 	"os"
 
+	"api-gateway/config"
 	"api-gateway/internal/database"
 	"api-gateway/internal/logger"
 )
 
 func main() {
-	dbService := database.New()
+	dbService := database.New(config.LoadDatabaseConfig())
 	defer dbService.Close()
 
 	if err := database.Migrate(dbService.GetDB()); err != nil {

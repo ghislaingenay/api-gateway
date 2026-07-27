@@ -15,7 +15,6 @@ import (
 	"api-gateway/internal/tenant"
 	"api-gateway/internal/user"
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
@@ -48,9 +47,9 @@ type Server struct {
 	signer                 auth.Signer
 }
 
-func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
+func NewServer(redisClient *redis.Client) *http.Server {
 	port, _ := strconv.Atoi(os.Getenv("PORT"))
-	dbService := database.New()
+	dbService := database.New(config.LoadDatabaseConfig())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -98,7 +97,7 @@ func NewServer(db *sql.DB, redisClient *redis.Client) *http.Server {
 		tenantStatus:  tenantStatus,
 		proxy: gateway.NewResilientProxier(
 			gateway.NewReverseProxier(),
-			resilienceConfig.DefaultDeadline,
+			resilienceConfig.DefaultTimeout,
 			resilience.RetryPolicy{
 				MaxAttempts: resilienceConfig.DefaultMaxAttempts,
 				BaseBackoff: resilienceConfig.DefaultBaseBackoff,
@@ -142,7 +141,7 @@ func toGatewayRoutes(entries []config.RouteEntry) []gateway.Route {
 			AuthRequired:        e.AuthRequired,
 			PermissionsRequired: e.PermissionsRequired,
 			CacheTTL:            time.Duration(e.CacheTTLSeconds) * time.Second,
-			Deadline:            time.Duration(e.DeadlineSeconds) * time.Second,
+			Timeout:             time.Duration(e.TimeoutSeconds) * time.Second,
 			RetryMaxAttempts:    e.RetryMaxAttempts,
 			BodySchema:          toBodySchema(e),
 			RequiredParams:      toRequiredParams(e.RequiredParams),

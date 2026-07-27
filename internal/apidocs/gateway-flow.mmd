@@ -1,0 +1,35 @@
+%% API Gateway request flow — mirrors the middleware chain wired in
+%% internal/server/routes.go. Only /api/* requests traverse the full chain;
+%% /health, /ready, /docs, and /docs/openapi.yaml bypass all of it, and
+%% /auth/*, /roles, /permissions use a shorter auth-only chain.
+flowchart TD
+    Client([Client request])
+
+    Client --> Correlation["CorrelationIDMiddleware<br/>(logger)<br/>assigns/propagates X-Correlation-ID"]
+    Correlation --> CORS["corsMiddleware<br/>(server)<br/>sets CORS headers, short-circuits OPTIONS"]
+    CORS --> Mux{{http.ServeMux route match}}
+
+    Mux -->|GET /health, /ready| Health[health handlers]
+    Mux -->|GET /docs, /docs/openapi.yaml| Docs[apidocs handlers]
+    Mux -->|POST /auth/login, /auth/refresh| AuthPublic[authhandler: login / refresh]
+    Mux -->|POST /auth/logout, GET /auth/me| AuthOnly["JWTAuthMiddleware only<br/>(requireAuth)"] --> AuthProtected[authhandler: logout / me]
+    Mux -->|GET /roles, /permissions| PermCheck["JWTAuthMiddleware +<br/>RequirePermission('roles:read')<br/>(requirePermission)"]
+    PermCheck --> Rbac[rbac handlers]
+    PermCheck -.->|"allow/deny"| Audit["audit.LogAuthzDecision<br/>compliance log: authz_allow / authz_deny"]
+
+    Mux -->|"/api/*"| JWT
+
+    subgraph chain ["/api/* middleware chain"]
+        direction TB
+        JWT["auth.JWTAuthMiddleware<br/>validates JWT, injects Claims into context"]
+        JWT --> Validation["validation.ValidationMiddleware<br/>resolves route (RouteResolver),<br/>validates body/params against Route.BodySchema"]
+        Validation --> RateLimit["ratelimit.RateLimitMiddleware<br/>enforces per-tenant/per-route limits"]
+        RateLimit --> Cache["cache.CacheMiddleware<br/>GET only: resolves route, checks Redis cache,<br/>re-checks tenant status on hit, serves or records MISS"]
+        Cache --> GatewayHandler["gateway.NewHandler<br/>re-checks tenant status, resolves route if not cached,<br/>strips spoofed tenant headers, sets X-Gateway-Tenant-ID"]
+        GatewayHandler --> Proxy["Proxier.Proxy<br/>(resilience: timeout/retry per Route)"]
+    end
+
+    Proxy --> Upstream[(Downstream service)]
+
+    classDef bypass fill:#eee,stroke:#999,color:#333;
+    class Health,Docs bypass;

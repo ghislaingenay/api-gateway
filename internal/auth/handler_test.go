@@ -1,4 +1,4 @@
-package authhandler
+package auth
 
 import (
 	"bytes"
@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"api-gateway/internal/auth"
 	"api-gateway/internal/rbac"
 	"api-gateway/internal/refreshtoken"
 	"api-gateway/internal/tenant"
@@ -140,7 +139,7 @@ func (f *fakeRoleCache) AllPermissions() []rbac.Permission { return nil }
 
 type fakeSigner struct{ signed int }
 
-func (f *fakeSigner) Sign(claims auth.CustomClaims) (string, error) {
+func (f *fakeSigner) Sign(claims CustomClaims) (string, error) {
 	f.signed++
 	return fmt.Sprintf("signed-token-%d-%s", f.signed, claims.UserID), nil
 }
@@ -156,7 +155,7 @@ func newFixtures() (tenantID, roleID, userID uuid.UUID, tenants *fakeTenantRepo,
 		"acme": {ID: tenantID, Slug: "acme", Name: "Acme"},
 	}}
 
-	hash, err := auth.HashPassword("correct-password")
+	hash, err := HashPassword("correct-password")
 	if err != nil {
 		panic(err)
 	}
@@ -289,7 +288,7 @@ func TestRefreshHandler(t *testing.T) {
 		refreshTokens := newFakeRefreshRepo()
 		signer := &fakeSigner{}
 
-		raw, hash, err := auth.GenerateRefreshToken()
+		raw, hash, err := GenerateRefreshToken()
 		if err != nil {
 			t.Fatalf("GenerateRefreshToken() error = %v", err)
 		}
@@ -352,7 +351,7 @@ func TestRefreshHandler(t *testing.T) {
 		refreshTokens := newFakeRefreshRepo()
 		signer := &fakeSigner{}
 
-		raw, hash, _ := auth.GenerateRefreshToken()
+		raw, hash, _ := GenerateRefreshToken()
 		refreshTokens.byHash[hash] = &refreshtoken.RefreshToken{
 			ID: uuid.New(), UserID: userID, TokenHash: hash, ExpiresAt: time.Now().Add(-time.Hour),
 		}
@@ -372,7 +371,7 @@ func TestRefreshHandler(t *testing.T) {
 		refreshTokens := newFakeRefreshRepo()
 		signer := &fakeSigner{}
 
-		raw, hash, _ := auth.GenerateRefreshToken()
+		raw, hash, _ := GenerateRefreshToken()
 		revokedAt := time.Now()
 		refreshTokens.byHash[hash] = &refreshtoken.RefreshToken{
 			ID: uuid.New(), UserID: userID, TokenHash: hash,
@@ -395,7 +394,7 @@ func TestLogoutHandler(t *testing.T) {
 		_, _, userID, _, _, _ := newFixtures()
 		refreshTokens := newFakeRefreshRepo()
 
-		raw, hash, _ := auth.GenerateRefreshToken()
+		raw, hash, _ := GenerateRefreshToken()
 		refreshTokens.byHash[hash] = &refreshtoken.RefreshToken{
 			ID: uuid.New(), UserID: userID, TokenHash: hash, ExpiresAt: time.Now().Add(time.Hour),
 		}
@@ -431,7 +430,7 @@ func TestMeHandler(t *testing.T) {
 		tenantID, roleID, userID, _, users, roles := newFixtures()
 
 		req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
-		req = req.WithContext(auth.WithClaims(req.Context(), &auth.CustomClaims{
+		req = req.WithContext(WithClaims(req.Context(), &CustomClaims{
 			TenantID: tenantID, UserID: userID, RoleID: roleID, Role: "viewer",
 		}))
 		rec := httptest.NewRecorder()
@@ -471,7 +470,7 @@ func TestMeHandler(t *testing.T) {
 		users.byID[userID].IsActive = false
 
 		req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
-		req = req.WithContext(auth.WithClaims(req.Context(), &auth.CustomClaims{
+		req = req.WithContext(WithClaims(req.Context(), &CustomClaims{
 			TenantID: tenantID, UserID: userID, RoleID: roleID, Role: "viewer",
 		}))
 		rec := httptest.NewRecorder()

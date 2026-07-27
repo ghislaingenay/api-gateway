@@ -11,48 +11,48 @@ import (
 	"api-gateway/internal/resilience"
 )
 
-// resilientProxier decorates a Proxier with a per-route deadline
+// resilientProxier decorates a Proxier with a per-route timeout
 // (FEAT-008 FR-2/FR-3) and, for idempotent (GET) requests, exponential
 // backoff retries on transient downstream failures (FEAT-008 FR-1). Non-GET
-// requests are never retried, but still run under the deadline-bound
+// requests are never retried, but still run under the timeout-bound
 // context so a slow downstream call is still aborted with a 504.
 type resilientProxier struct {
 	next               Proxier
-	defaultDeadline    time.Duration
+	defaultTimeout     time.Duration
 	defaultRetryPolicy resilience.RetryPolicy
 }
 
-// NewResilientProxier wraps next with deadline enforcement and GET-only
-// retry logic. defaultDeadline and defaultRetryPolicy apply to routes with
+// NewResilientProxier wraps next with timeout enforcement and GET-only
+// retry logic. defaultTimeout and defaultRetryPolicy apply to routes with
 // no per-route override.
-func NewResilientProxier(next Proxier, defaultDeadline time.Duration, defaultRetryPolicy resilience.RetryPolicy) Proxier {
+func NewResilientProxier(next Proxier, defaultTimeout time.Duration, defaultRetryPolicy resilience.RetryPolicy) Proxier {
 	return &resilientProxier{
 		next:               next,
-		defaultDeadline:    defaultDeadline,
+		defaultTimeout:     defaultTimeout,
 		defaultRetryPolicy: defaultRetryPolicy,
 	}
 }
 
 // Proxy implements Proxier.
 func (p *resilientProxier) Proxy(w http.ResponseWriter, r *http.Request, upstream string) {
-	deadline := p.defaultDeadline
+	timeout := p.defaultTimeout
 	policy := p.defaultRetryPolicy
 
 	if route, ok := RouteFromContext(r.Context()); ok && route != nil {
-		if route.Deadline > 0 {
-			deadline = route.Deadline
+		if route.Timeout > 0 {
+			timeout = route.Timeout
 		}
 		if route.RetryMaxAttempts > 0 {
 			policy.MaxAttempts = route.RetryMaxAttempts
 		}
 	}
 
-	ctx, cancel := resilience.WithDeadline(r.Context(), deadline)
+	ctx, cancel := resilience.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	r = r.WithContext(ctx)
 
 	// Only idempotent GET requests are retried (FEAT-008 FR-1 AC4); every
-	// other method still gets the deadline-bound context but a single
+	// other method still gets the timeout-bound context but a single
 	// attempt, streamed straight through to the real ResponseWriter.
 	if r.Method != http.MethodGet {
 		p.next.Proxy(w, r, upstream)

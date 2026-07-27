@@ -2,7 +2,6 @@ package database
 
 import (
 	"database/sql"
-	"fmt"
 	"testing"
 )
 
@@ -11,12 +10,13 @@ import (
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	// search_path is hardcoded to "public" here rather than reusing the
-	// package-level schema var, since that var is only populated when
+	// search_path is hardcoded to "public" here rather than reusing
+	// testDBConfig.DBSchema, since that field is only populated when
 	// godotenv/autoload finds a repo-root .env file — which depends on the
 	// test's working directory and isn't guaranteed across environments.
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s&search_path=public", username, password, host, port, database, sslMode)
-	db, err := sql.Open("pgx", connStr)
+	cfg := *testDBConfig
+	cfg.DBSchema = "public"
+	db, err := sql.Open("pgx", cfg.ConnectionString())
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}

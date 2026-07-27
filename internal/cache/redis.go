@@ -16,7 +16,7 @@ const keyPrefix = "cache:"
 func NewRedisClient(url string) (*redis.Client, error) {
 	opts, err := redis.ParseURL(url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse redis url: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrParseRedisURL, err)
 	}
 
 	client := redis.NewClient(opts)
@@ -25,7 +25,7 @@ func NewRedisClient(url string) (*redis.Client, error) {
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
-		return nil, fmt.Errorf("failed to connect to redis: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrConnectRedis, err)
 	}
 
 	return client, nil
@@ -72,7 +72,7 @@ func (c *redisResponseCache) Get(ctx context.Context, key string) (*CachedRespon
 		if err == redis.Nil {
 			return nil, false, nil
 		}
-		return nil, false, fmt.Errorf("cache: get key %q: %w", key, err)
+		return nil, false, fmt.Errorf("%w: key %q: %w", ErrCacheGet, key, err)
 	}
 
 	var resp CachedResponse
@@ -88,10 +88,10 @@ func (c *redisResponseCache) Get(ctx context.Context, key string) (*CachedRespon
 func (c *redisResponseCache) Set(ctx context.Context, key string, resp *CachedResponse, ttl time.Duration) error {
 	encoded, err := json.Marshal(resp)
 	if err != nil {
-		return fmt.Errorf("cache: marshal response for key %q: %w", key, err)
+		return fmt.Errorf("%w: key %q: %w", ErrCacheMarshal, key, err)
 	}
 	if err := c.redis.Set(ctx, key, encoded, ttl).Err(); err != nil {
-		return fmt.Errorf("cache: set key %q: %w", key, err)
+		return fmt.Errorf("%w: key %q: %w", ErrCacheSet, key, err)
 	}
 	return nil
 }

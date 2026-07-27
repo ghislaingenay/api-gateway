@@ -5,8 +5,7 @@ import (
 	"strconv"
 )
 
-// Default per-tenant request limits used when RATE_LIMIT_PER_MINUTE_DEFAULT /
-// RATE_LIMIT_PER_HOUR_DEFAULT are unset or invalid.
+// Default per-tenant request limits
 const (
 	DefaultRateLimitPerMinute = 60
 	DefaultRateLimitPerHour   = 1000
@@ -20,10 +19,6 @@ type RateLimitConfig struct {
 }
 
 // LoadRateLimitConfig reads rate limit defaults from the environment.
-//
-// RATE_LIMIT_PER_MINUTE_DEFAULT and RATE_LIMIT_PER_HOUR_DEFAULT default to
-// DefaultRateLimitPerMinute/DefaultRateLimitPerHour when unset or not a
-// positive integer.
 func LoadRateLimitConfig() *RateLimitConfig {
 	return &RateLimitConfig{
 		DefaultPerMinute: positiveIntEnv("RATE_LIMIT_PER_MINUTE_DEFAULT", DefaultRateLimitPerMinute),

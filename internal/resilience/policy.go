@@ -47,7 +47,7 @@ func (p RetryPolicy) Backoff(attempt int) time.Duration {
 	return time.Duration(rand.Int63n(int64(max)))
 }
 
-// WithDeadline derives a deadline-bound context from parent (FEAT-008 FR-2).
-func WithDeadline(parent context.Context, deadline time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(parent, deadline)
+// WithTimeout derives a deadline-bound context from parent (FEAT-008 FR-2).
+func WithTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(parent, timeout)
 }

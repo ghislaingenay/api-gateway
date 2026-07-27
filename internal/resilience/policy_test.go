@@ -70,10 +70,10 @@ func TestRetryPolicy_Backoff(t *testing.T) {
 	})
 }
 
-func TestWithDeadline(t *testing.T) {
+func TestWithTimeout(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := WithDeadline(context.Background(), 10*time.Millisecond)
+	ctx, cancel := WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
 	select {

@@ -1,8 +1,8 @@
 package config
 
 // DefaultMaxBodyBytes is the fallback request body size limit enforced by
-// the validation middleware before JSON parsing (FEAT-007 Risk 1).
-const DefaultMaxBodyBytes = 1 << 20 // 1 MiB
+// the validation middleware before JSON parsing
+const DefaultMaxBodyBytes = 1 << 20 // 1 MiB = 1 * 1024 * 1024
 
 // ValidationConfig holds the request validation middleware's settings.
 type ValidationConfig struct {

@@ -1,4 +1,4 @@
-package validation
+package rules
 
 import (
 	"testing"
@@ -11,18 +11,6 @@ import (
 
 	"github.com/google/uuid"
 )
-
-func validTenant() tenant.Tenant {
-	return tenant.Tenant{
-		ID:                 uuid.New(),
-		Name:               "Acme Inc",
-		Slug:               "acme-inc",
-		Tier:               "free",
-		RateLimitPerMinute: 60,
-		RateLimitPerHour:   1000,
-		MaxUsers:           10,
-	}
-}
 
 func TestValidate_Tenant(t *testing.T) {
 	tests := []struct {
