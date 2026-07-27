@@ -1,4 +1,4 @@
-package authhandler
+package auth
 
 import (
 	"api-gateway/internal/user"

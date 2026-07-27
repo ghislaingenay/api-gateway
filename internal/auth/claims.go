@@ -9,8 +9,7 @@ import (
 
 // CustomClaims are the identity claims the gateway trusts once a JWT's
 // signature and standard registered claims (exp, nbf, iat) have been
-// validated. Downstream middleware must read identity only from these
-// claims, never from request headers.
+// validated.
 type CustomClaims struct {
 	jwt.RegisteredClaims
 	TenantID    uuid.UUID `json:"tenant_id"`
