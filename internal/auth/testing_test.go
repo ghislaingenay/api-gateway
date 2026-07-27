@@ -5,10 +5,15 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/MicahParks/jwkset"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
@@ -21,18 +26,6 @@ func generateRSAKeyPair(t *testing.T) *rsa.PrivateKey {
 		t.Fatalf("rsa.GenerateKey() error = %v", err)
 	}
 	return key
-}
-
-// encodePublicKeyPEM base64-encodes the PEM-encoded PKIX public key, matching
-// the format config.JWTConfig.SigningKeys expects.
-func encodePublicKeyPEM(t *testing.T, key *rsa.PublicKey) string {
-	t.Helper()
-	der, err := x509.MarshalPKIXPublicKey(key)
-	if err != nil {
-		t.Fatalf("x509.MarshalPKIXPublicKey() error = %v", err)
-	}
-	block := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
-	return base64.StdEncoding.EncodeToString(block)
 }
 
 // encodePrivateKeyPEM base64-encodes the PEM-encoded PKCS1 private key,
@@ -85,6 +78,54 @@ func signHS256(t *testing.T, secret []byte, kid string, claims CustomClaims) str
 		t.Fatalf("SignedString() error = %v", err)
 	}
 	return signed
+}
+
+// jwkSetJSON encodes the given kid->public-key pairs as a JWKS JSON
+// document, the format served by a real JWKS endpoint.
+func jwkSetJSON(t *testing.T, keys map[string]*rsa.PublicKey) []byte {
+	t.Helper()
+	marshal := jwkset.JWKSMarshal{Keys: make([]jwkset.JWKMarshal, 0, len(keys))}
+	for kid, key := range keys {
+		jwk, err := jwkset.NewJWKFromKey(key, jwkset.JWKOptions{
+			Metadata: jwkset.JWKMetadataOptions{KID: kid, ALG: jwkset.AlgRS256},
+		})
+		if err != nil {
+			t.Fatalf("jwkset.NewJWKFromKey() error = %v", err)
+		}
+		marshal.Keys = append(marshal.Keys, jwk.Marshal())
+	}
+	body, err := json.Marshal(marshal)
+	if err != nil {
+		t.Fatalf("json.Marshal(JWKSMarshal) error = %v", err)
+	}
+	return body
+}
+
+// newJWKSServer starts an httptest.Server serving the given kid->public-key
+// pairs as a JWKS JSON document. The returned setKeys func lets a test swap
+// the served key set at runtime, to exercise the store's background
+// refresh (rotation) behavior.
+func newJWKSServer(t *testing.T, keys map[string]*rsa.PublicKey) (server *httptest.Server, setKeys func(map[string]*rsa.PublicKey)) {
+	t.Helper()
+
+	var mu sync.Mutex
+	body := jwkSetJSON(t, keys)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+
+	setKeys = func(newKeys map[string]*rsa.PublicKey) {
+		newBody := jwkSetJSON(t, newKeys)
+		mu.Lock()
+		defer mu.Unlock()
+		body = newBody
+	}
+	return srv, setKeys
 }
 
 // signNone builds an alg=none token with no signature.
