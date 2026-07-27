@@ -32,11 +32,16 @@ func (s *Server) RegisterRoutes() http.Handler {
 	mux.Handle("GET /docs", apidocs.SwaggerUIHandler())
 	mux.Handle("GET /docs/openapi.yaml", apidocs.OpenAPISpecHandler())
 
-	mux.Handle("GET /roles", s.requirePermission("roles:read", rbac.RolesHandler(s.roleCache)))
-	mux.Handle("GET /permissions", s.requirePermission("roles:read", rbac.PermissionsHandler(s.roleCache)))
+	mux.Handle("GET /roles", s.requirePermission("roles:read",
+		ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(rbac.RolesHandler(s.roleCache))))
+	mux.Handle("GET /permissions", s.requirePermission("roles:read",
+		ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(rbac.PermissionsHandler(s.roleCache))))
 
-	mux.Handle("POST /auth/login", auth.LoginHandler(s.userRepo, s.tenantRepo, s.refreshTokens, s.roleCache, s.signer))
-	mux.Handle("POST /auth/refresh", auth.RefreshHandler(s.refreshTokens, s.userRepo, s.roleCache, s.signer))
+	loginIPLimit := ratelimit.IPRateLimitMiddleware(s.ipLimiter, s.loginRatePerMinute)
+	mux.Handle("POST /auth/login", loginIPLimit(
+		auth.LoginHandler(s.userRepo, s.tenantRepo, s.refreshTokens, s.roleCache, s.signer, s.loginGuard, s.loginSecurity)))
+	mux.Handle("POST /auth/refresh", loginIPLimit(
+		auth.RefreshHandler(s.refreshTokens, s.userRepo, s.roleCache, s.signer)))
 	mux.Handle("POST /auth/logout", s.requireAuth(auth.LogoutHandler(s.refreshTokens)))
 	mux.Handle("GET /auth/me", s.requireAuth(auth.MeHandler(s.userRepo, s.roleCache)))
 
@@ -60,7 +65,7 @@ func (s *Server) RegisterRoutes() http.Handler {
 // requirePermission wraps a handler with JWT authentication and a permission
 // check, so only callers with a valid token carrying the given permission
 // can reach it.
-func (s *Server) requirePermission(permission string, next http.HandlerFunc) http.Handler {
+func (s *Server) requirePermission(permission string, next http.Handler) http.Handler {
 	return auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(auth.RequirePermission(permission)(next))
 }
 

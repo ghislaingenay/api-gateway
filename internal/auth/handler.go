@@ -7,9 +7,13 @@ import (
 	"net/http"
 	"time"
 
+	"api-gateway/config"
+	"api-gateway/internal/clientip"
+	"api-gateway/internal/loginguard"
 	"api-gateway/internal/logger"
 	"api-gateway/internal/rbac"
 	"api-gateway/internal/refreshtoken"
+	"api-gateway/internal/resilience"
 	"api-gateway/internal/rules"
 	"api-gateway/internal/tenant"
 	"api-gateway/internal/user"
@@ -23,8 +27,11 @@ const (
 	refreshTokenTTL = 7 * 24 * time.Hour
 )
 
-// LoginHandler returns an http.HandlerFunc for POST /auth/login.
-func LoginHandler(users user.Repository, tenants tenant.Repository, refreshTokens refreshtoken.Repository, roles rbac.RoleCache, signer Signer) http.HandlerFunc {
+// LoginHandler returns an http.HandlerFunc for POST /auth/login. Failed
+// attempts are progressively delayed per caller (guard, keyed by IP + tenant
+// + email) to slow down credential-stuffing and brute-force attempts; the
+// counter resets on a successful login.
+func LoginHandler(users user.Repository, tenants tenant.Repository, refreshTokens refreshtoken.Repository, roles rbac.RoleCache, signer Signer, guard loginguard.Guard, delayCfg config.LoginSecurityConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req LoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -37,24 +44,30 @@ func LoginHandler(users user.Repository, tenants tenant.Repository, refreshToken
 		}
 
 		ctx := r.Context()
+		failureKey := clientip.FromRequest(r) + ":" + req.TenantSlug + ":" + req.Email
+
+		fail := func() {
+			delayOnFailure(ctx, guard, delayCfg, failureKey)
+			writeInvalidCredentials(w, r)
+		}
 
 		t, err := tenants.GetBySlug(ctx, req.TenantSlug)
 		if err != nil {
-			writeInvalidCredentials(w, r)
+			fail()
 			return
 		}
 
 		u, err := users.GetByEmail(ctx, t.ID, req.Email)
 		if err != nil {
-			writeInvalidCredentials(w, r)
+			fail()
 			return
 		}
 		if !u.IsActive {
-			writeInvalidCredentials(w, r)
+			fail()
 			return
 		}
 		if err := ComparePassword(u.PasswordHash, req.Password); err != nil {
-			writeInvalidCredentials(w, r)
+			fail()
 			return
 		}
 
@@ -76,7 +89,38 @@ func LoginHandler(users user.Repository, tenants tenant.Repository, refreshToken
 			logger.FromContext(ctx).Warn("authhandler: login: update last_login_at", "user_id", u.ID.String(), "error", err.Error())
 		}
 
+		if err := guard.Reset(ctx, failureKey); err != nil {
+			logger.FromContext(ctx).Warn("authhandler: login: reset failure guard", "error", err.Error())
+		}
+
 		writeJSON(w, r, http.StatusOK, resp)
+	}
+}
+
+// delayOnFailure records a failed login attempt and blocks for a jittered,
+// exponentially increasing delay (capped at delayCfg.DelayMax) before the
+// caller returns its 401 response. It fails open (no delay) if the guard
+// can't be reached, and returns early if ctx is cancelled mid-sleep.
+func delayOnFailure(ctx context.Context, guard loginguard.Guard, delayCfg config.LoginSecurityConfig, key string) {
+	attempt, err := guard.RegisterFailure(ctx, key)
+	if err != nil {
+		logger.FromContext(ctx).Warn("authhandler: login: register failure", "error", err.Error())
+		return
+	}
+
+	delay := (resilience.RetryPolicy{BaseBackoff: delayCfg.DelayBaseBackoff}).Backoff(attempt)
+	if delay > delayCfg.DelayMax {
+		delay = delayCfg.DelayMax
+	}
+	if delay <= 0 {
+		return
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
 	}
 }
 

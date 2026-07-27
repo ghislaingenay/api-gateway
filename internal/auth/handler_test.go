@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"api-gateway/config"
 	"api-gateway/internal/rbac"
 	"api-gateway/internal/refreshtoken"
 	"api-gateway/internal/tenant"
@@ -144,6 +145,28 @@ func (f *fakeSigner) Sign(claims CustomClaims) (string, error) {
 	return fmt.Sprintf("signed-token-%d-%s", f.signed, claims.UserID), nil
 }
 
+// fakeGuard records RegisterFailure/Reset calls per key so tests can assert
+// on login-failure tracking without a real Redis instance.
+type fakeGuard struct {
+	failures map[string]int
+	resets   int
+}
+
+func newFakeGuard() *fakeGuard {
+	return &fakeGuard{failures: map[string]int{}}
+}
+
+func (f *fakeGuard) RegisterFailure(ctx context.Context, key string) (int, error) {
+	f.failures[key]++
+	return f.failures[key], nil
+}
+
+func (f *fakeGuard) Reset(ctx context.Context, key string) error {
+	f.resets++
+	delete(f.failures, key)
+	return nil
+}
+
 // --- fixtures ---
 
 func newFixtures() (tenantID, roleID, userID uuid.UUID, tenants *fakeTenantRepo, users *fakeUserRepo, roles *fakeRoleCache) {
@@ -241,11 +264,12 @@ func TestLoginHandler(t *testing.T) {
 			}
 			refreshTokens := newFakeRefreshRepo()
 			signer := &fakeSigner{}
+			guard := newFakeGuard()
 
 			req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(tt.body))
 			rec := httptest.NewRecorder()
 
-			LoginHandler(users, tenants, refreshTokens, roles, signer)(rec, req)
+			LoginHandler(users, tenants, refreshTokens, roles, signer, guard, config.LoginSecurityConfig{})(rec, req)
 
 			if rec.Code != tt.wantStatusCode {
 				t.Fatalf("status = %d, want %d (body=%s)", rec.Code, tt.wantStatusCode, rec.Body.String())
@@ -279,6 +303,60 @@ func TestLoginHandler(t *testing.T) {
 				t.Errorf("UpdateLastLoginAt calls = %d, want 1", len(users.updated))
 			}
 		})
+	}
+}
+
+func TestLoginHandler_ProgressiveDelay(t *testing.T) {
+	_, _, _, tenants, users, roles := newFixtures()
+	refreshTokens := newFakeRefreshRepo()
+	signer := &fakeSigner{}
+	guard := newFakeGuard()
+	delayCfg := config.LoginSecurityConfig{
+		DelayBaseBackoff: 20 * time.Millisecond,
+		DelayMax:         200 * time.Millisecond,
+	}
+
+	body := `{"email":"user@acme.test","password":"wrong","tenant_slug":"acme"}`
+	key := "192.0.2.1:acme:user@acme.test"
+
+	// First failure: RegisterFailure returns attempt 1, a non-zero delay is
+	// possible (jittered, may be 0..BaseBackoff) but the guard must record it.
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(body))
+	req.RemoteAddr = "192.0.2.1:12345"
+	rec := httptest.NewRecorder()
+	LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg)(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+	if guard.failures[key] != 1 {
+		t.Fatalf("failures[%q] = %d, want 1", key, guard.failures[key])
+	}
+
+	// A handful more failures should keep incrementing the same key's count.
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(body))
+		req.RemoteAddr = "192.0.2.1:12345"
+		rec := httptest.NewRecorder()
+		LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg)(rec, req)
+	}
+	if guard.failures[key] != 4 {
+		t.Fatalf("failures[%q] = %d, want 4", key, guard.failures[key])
+	}
+
+	// A subsequent successful login must reset the failure count for that key.
+	successBody := `{"email":"user@acme.test","password":"correct-password","tenant_slug":"acme"}`
+	req = httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(successBody))
+	req.RemoteAddr = "192.0.2.1:12345"
+	rec = httptest.NewRecorder()
+	LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg)(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	if guard.resets != 1 {
+		t.Fatalf("resets = %d, want 1", guard.resets)
+	}
+	if _, ok := guard.failures[key]; ok {
+		t.Errorf("failures[%q] still present after reset", key)
 	}
 }
 
