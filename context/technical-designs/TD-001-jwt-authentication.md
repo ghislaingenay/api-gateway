@@ -218,6 +218,14 @@ Mitigation: support multiple simultaneously active keys keyed by `kid`; grace pe
   `JWT_ALLOWED_ALGORITHMS` and `JWT_SIGNING_KEYS` (kid=base64-PEM pairs) from
   the environment; `auth.NewKeyStore` parses them into RSA public keys. No
   KMS/JWKS integration for MVP.
+  **Superseded 2026-07-27 (see FEAT-011/TD-011):** the "No KMS/JWKS
+  integration for MVP" simplification is being replaced by a JWKS-backed
+  key store (`github.com/MicahParks/keyfunc/v3` + `jwkset`) that fetches
+  and auto-refreshes public keys from an auth-server-published JWKS
+  endpoint. `JWT_SIGNING_KEYS` is removed entirely (no static-key fallback)
+  in favor of `JWT_JWKS_URL` (required) and `JWT_JWKS_REFRESH_INTERVAL`
+  (optional, default 1h). `JWT_SIGNING_KID`/`JWT_SIGNING_PRIVATE_KEY`
+  (token issuance) are unaffected. See TD-011 for details.
 
 ---
 
