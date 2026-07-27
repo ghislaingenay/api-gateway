@@ -13,3 +13,4 @@
 | TD-008 | [Resilience (Retry & Timeout)](TD-008-resilience-retry-timeout.md)                         | Done   | [FEAT-008](../features/FEAT-008-resilience-retry-timeout.md)    |
 | TD-009 | [Observability & Health Checks](TD-009-observability-health-checks.md)                     | Done   | [FEAT-009](../features/FEAT-009-observability-health-checks.md) |
 | TD-010 | [API Documentation & Dev Environment](TD-010-api-docs-dev-environment.md)                  | Done   | [FEAT-010](../features/FEAT-010-api-docs-dev-environment.md)    |
+| TD-011 | [JWKS Key Rotation](TD-011-jwks-key-rotation.md)                                           | Done   | [FEAT-011](../features/FEAT-011-jwks-key-rotation.md)           |
