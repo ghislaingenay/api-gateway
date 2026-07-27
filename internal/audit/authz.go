@@ -9,11 +9,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// LogAuthzDecision records an allow/deny authorization decision against a
-// required permission or role, identifying the tenant and user involved.
-// event_type is "authz_allow" or "authz_deny" so denials are greppable in
-// aggregated logs (FEAT-009 FR-4). ctx supplies the request's correlation
-// ID via logger.FromContext.
+// Structured log wrapper method records an allow/deny authorization decision against a
+// required permission or role
 func LogAuthzDecision(ctx context.Context, allowed bool, tenantID, userID uuid.UUID, required string) {
 	result := "deny"
 	if allowed {
