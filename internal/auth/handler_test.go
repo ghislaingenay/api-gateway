@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"api-gateway/config"
 	"api-gateway/internal/rbac"
 	"api-gateway/internal/refreshtoken"
 	"api-gateway/internal/tenant"
@@ -144,6 +145,28 @@ func (f *fakeSigner) Sign(claims CustomClaims) (string, error) {
 	return fmt.Sprintf("signed-token-%d-%s", f.signed, claims.UserID), nil
 }
 
+// fakeGuard records RegisterFailure/Reset calls per key so tests can assert
+// on login-failure tracking without a real Redis instance.
+type fakeGuard struct {
+	failures map[string]int
+	resets   int
+}
+
+func newFakeGuard() *fakeGuard {
+	return &fakeGuard{failures: map[string]int{}}
+}
+
+func (f *fakeGuard) RegisterFailure(ctx context.Context, key string) (int, error) {
+	f.failures[key]++
+	return f.failures[key], nil
+}
+
+func (f *fakeGuard) Reset(ctx context.Context, key string) error {
+	f.resets++
+	delete(f.failures, key)
+	return nil
+}
+
 // --- fixtures ---
 
 func newFixtures() (tenantID, roleID, userID uuid.UUID, tenants *fakeTenantRepo, users *fakeUserRepo, roles *fakeRoleCache) {
@@ -241,11 +264,12 @@ func TestLoginHandler(t *testing.T) {
 			}
 			refreshTokens := newFakeRefreshRepo()
 			signer := &fakeSigner{}
+			guard := newFakeGuard()
 
 			req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(tt.body))
 			rec := httptest.NewRecorder()
 
-			LoginHandler(users, tenants, refreshTokens, roles, signer)(rec, req)
+			LoginHandler(users, tenants, refreshTokens, roles, signer, guard, config.LoginSecurityConfig{}, 0)(rec, req)
 
 			if rec.Code != tt.wantStatusCode {
 				t.Fatalf("status = %d, want %d (body=%s)", rec.Code, tt.wantStatusCode, rec.Body.String())
@@ -279,6 +303,127 @@ func TestLoginHandler(t *testing.T) {
 				t.Errorf("UpdateLastLoginAt calls = %d, want 1", len(users.updated))
 			}
 		})
+	}
+}
+
+func TestLoginHandler_ProgressiveDelay(t *testing.T) {
+	_, _, _, tenants, users, roles := newFixtures()
+	refreshTokens := newFakeRefreshRepo()
+	signer := &fakeSigner{}
+	guard := newFakeGuard()
+	delayCfg := config.LoginSecurityConfig{
+		DelayBaseBackoff: 20 * time.Millisecond,
+		DelayMax:         200 * time.Millisecond,
+	}
+
+	body := `{"email":"user@acme.test","password":"wrong","tenant_slug":"acme"}`
+	key := "192.0.2.1:acme:user@acme.test"
+
+	// First failure: RegisterFailure returns attempt 1, a non-zero delay is
+	// possible (jittered, may be 0..BaseBackoff) but the guard must record it.
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(body))
+	req.RemoteAddr = "192.0.2.1:12345"
+	rec := httptest.NewRecorder()
+	LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg, 0)(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+	if guard.failures[key] != 1 {
+		t.Fatalf("failures[%q] = %d, want 1", key, guard.failures[key])
+	}
+
+	// A handful more failures should keep incrementing the same key's count.
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(body))
+		req.RemoteAddr = "192.0.2.1:12345"
+		rec := httptest.NewRecorder()
+		LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg, 0)(rec, req)
+	}
+	if guard.failures[key] != 4 {
+		t.Fatalf("failures[%q] = %d, want 4", key, guard.failures[key])
+	}
+
+	// A subsequent successful login must reset the failure count for that key.
+	successBody := `{"email":"user@acme.test","password":"correct-password","tenant_slug":"acme"}`
+	req = httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(successBody))
+	req.RemoteAddr = "192.0.2.1:12345"
+	rec = httptest.NewRecorder()
+	LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg, 0)(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	if guard.resets != 1 {
+		t.Fatalf("resets = %d, want 1", guard.resets)
+	}
+	if _, ok := guard.failures[key]; ok {
+		t.Errorf("failures[%q] still present after reset", key)
+	}
+}
+
+func TestClampAttempt(t *testing.T) {
+	t.Parallel()
+
+	base := 250 * time.Millisecond
+	max := 4 * time.Second
+
+	tests := []struct {
+		name    string
+		attempt int
+		want    int
+	}{
+		{"first attempt", 1, 1},
+		{"below zero clamps to 1", 0, 1},
+		{"grows normally while under max", 3, 3},
+		// base<<4 == 4s == max, so 5 is the last attempt that still changes
+		// the shifted value; anything beyond must clamp to it.
+		{"at the doubling that reaches max", 5, 5},
+		{"just past the cap clamps to 5", 6, 5},
+		// Without clamping, resilience.Backoff's BaseBackoff<<(attempt-1)
+		// overflows int64 well before this and can wrap negative/zero,
+		// silently disabling the delay — this is the regression guard.
+		{"far past the cap still clamps to 5", 1000, 5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := clampAttempt(base, max, tt.attempt); got != tt.want {
+				t.Errorf("clampAttempt(%v, %v, %d) = %d, want %d", base, max, tt.attempt, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDelayOnFailure_NoOverflowForSustainedAttacker(t *testing.T) {
+	t.Parallel()
+
+	guard := newFakeGuard()
+	// Tiny durations so 200 real (bounded) sleeps stay fast; what matters is
+	// the ratio (37+ doublings before max) that used to overflow, not the
+	// absolute scale.
+	delayCfg := config.LoginSecurityConfig{
+		DelayBaseBackoff: 1 * time.Millisecond,
+		DelayMax:         5 * time.Millisecond,
+	}
+
+	// Drive the same key well past the attempt count where the unclamped
+	// shift would overflow (see TestClampAttempt for the exact numbers) and
+	// confirm delayOnFailure keeps returning within a bounded time — the
+	// actual "does the delay stay non-zero/bounded" guarantee is verified
+	// deterministically in TestClampAttempt; this just guards against a
+	// hang or runaway wait if that clamp were ever removed.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			delayOnFailure(context.Background(), guard, delayCfg, "attacker-key")
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("delayOnFailure did not return promptly across 200 sustained failures; possible overflow regression")
 	}
 }
 

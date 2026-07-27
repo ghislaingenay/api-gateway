@@ -8,6 +8,7 @@ import (
 	"api-gateway/internal/gateway"
 	"api-gateway/internal/health"
 	"api-gateway/internal/logger"
+	"api-gateway/internal/loginguard"
 	"api-gateway/internal/ratelimit"
 	"api-gateway/internal/rbac"
 	"api-gateway/internal/refreshtoken"
@@ -35,8 +36,13 @@ type Server struct {
 	tenantStatus           gateway.TenantStatusChecker
 	proxy                  gateway.Proxier
 	rateLimiter            ratelimit.Limiter
+	ipLimiter              ratelimit.KeyLimiter
 	rateLimits             ratelimit.LimitsProvider
 	rateLimitDefs          ratelimit.Defaults
+	loginRatePerMinute     int
+	loginGuard             loginguard.Guard
+	loginSecurity          config.LoginSecurityConfig
+	trustedProxyHops       int
 	responseCache          cache.ResponseCache
 	cacheDefaultTTL        time.Duration
 	validationMaxBodyBytes int64
@@ -81,12 +87,16 @@ func NewServer(redisClient *redis.Client) *http.Server {
 	cacheConfig := config.LoadCacheConfig()
 	resilienceConfig := config.LoadResilienceConfig()
 	validationConfig := config.LoadValidationConfig()
+	loginSecurityConfig := config.LoadLoginSecurityConfig()
+	clientIPConfig := config.LoadClientIPConfig()
 
 	signer, err := auth.NewSigner(jwtConfig.SigningKID, jwtConfig.SigningPrivateKey)
 	if err != nil {
 		logger.Default().Error("server: failed to build JWT signer", "error", err.Error())
 		os.Exit(1)
 	}
+
+	slidingWindowLimiter := ratelimit.NewSlidingWindowLimiter(redisClient)
 
 	NewServer := &Server{
 		port:          port,
@@ -103,12 +113,17 @@ func NewServer(redisClient *redis.Client) *http.Server {
 				BaseBackoff: resilienceConfig.DefaultBaseBackoff,
 			},
 		),
-		rateLimiter: ratelimit.NewSlidingWindowLimiter(redisClient),
+		rateLimiter: slidingWindowLimiter,
+		ipLimiter:   slidingWindowLimiter,
 		rateLimits:  tenantStatus,
 		rateLimitDefs: ratelimit.Defaults{
 			PerMinute: rateLimitConfig.DefaultPerMinute,
 			PerHour:   rateLimitConfig.DefaultPerHour,
 		},
+		loginRatePerMinute:     rateLimitConfig.LoginPerMinute,
+		loginGuard:             loginguard.NewRedisGuard(redisClient, loginSecurityConfig.FailureWindow),
+		loginSecurity:          *loginSecurityConfig,
+		trustedProxyHops:       clientIPConfig.TrustedProxyHops,
 		responseCache:          cache.NewResponseCache(redisClient),
 		cacheDefaultTTL:        cacheConfig.DefaultTTL,
 		validationMaxBodyBytes: validationConfig.MaxBodyBytes,

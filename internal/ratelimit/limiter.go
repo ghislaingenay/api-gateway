@@ -62,6 +62,13 @@ type Limiter interface {
 	Allow(ctx context.Context, tenantID, userID uuid.UUID, window Window, limit int) (Decision, error)
 }
 
+// KeyLimiter enforces a rate limit for a single window against an arbitrary
+// caller-supplied key, for callers that have no tenant/user identity yet
+// (e.g. pre-authentication endpoints keyed by client IP).
+type KeyLimiter interface {
+	AllowKey(ctx context.Context, key string, window Window, limit int) (Decision, error)
+}
+
 // limiterStore is the subset of *redis.Client the limiter needs, sized to
 // its one call so tests can substitute a fake without a live Redis instance.
 type limiterStore interface {
@@ -84,6 +91,12 @@ func NewSlidingWindowLimiter(redisClient *redis.Client) *SlidingWindowLimiter {
 
 // Allow implements Limiter.
 func (l *SlidingWindowLimiter) Allow(ctx context.Context, tenantID, userID uuid.UUID, window Window, limit int) (Decision, error) {
+	return l.AllowKey(ctx, fmt.Sprintf("%s:%s", tenantID, userID), window, limit)
+}
+
+// AllowKey implements KeyLimiter, applying the same sliding-window
+// approximation as Allow against an arbitrary key.
+func (l *SlidingWindowLimiter) AllowKey(ctx context.Context, key string, window Window, limit int) (Decision, error) {
 	dur := window.Duration()
 	if dur <= 0 {
 		return Decision{}, fmt.Errorf("ratelimit: unknown window %q", window)
@@ -93,8 +106,8 @@ func (l *SlidingWindowLimiter) Allow(ctx context.Context, tenantID, userID uuid.
 	bucketStart := now.Truncate(dur)
 	prevBucketStart := bucketStart.Add(-dur)
 
-	currentKey := fmt.Sprintf("%s%s:%s:%s:%d", keyPrefix, tenantID, userID, window, bucketStart.Unix())
-	previousKey := fmt.Sprintf("%s%s:%s:%s:%d", keyPrefix, tenantID, userID, window, prevBucketStart.Unix())
+	currentKey := fmt.Sprintf("%s%s:%s:%d", keyPrefix, key, window, bucketStart.Unix())
+	previousKey := fmt.Sprintf("%s%s:%s:%d", keyPrefix, key, window, prevBucketStart.Unix())
 
 	res, err := l.redis.Eval(ctx, incrScript, []string{currentKey, previousKey}, (2 * dur).Milliseconds()).Result()
 	if err != nil {
