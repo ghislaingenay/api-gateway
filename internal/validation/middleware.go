@@ -10,6 +10,7 @@ import (
 
 	"api-gateway/internal/gateway"
 	"api-gateway/internal/logger"
+	"api-gateway/internal/rules"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -85,7 +86,7 @@ func validateParams(r *http.Request, route *gateway.Route) []FieldError {
 			errs = append(errs, FieldError{Field: p.Name, Reason: "required"})
 			continue
 		}
-		if err := validateVar(value, p.Rule); err != nil {
+		if err := rules.Var(value, p.Rule); err != nil {
 			errs = append(errs, FieldError{Field: p.Name, Reason: reasonFor(err)})
 		}
 	}
@@ -147,7 +148,7 @@ func validateBody(w http.ResponseWriter, r *http.Request, schema *gateway.BodySc
 			}
 			continue
 		}
-		if err := validateVar(value, f.Rule); err != nil {
+		if err := rules.Var(value, f.Rule); err != nil {
 			errs = append(errs, FieldError{Field: f.Field, Reason: reasonFor(err)})
 		}
 	}
