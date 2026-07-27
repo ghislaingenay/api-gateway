@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -19,7 +18,7 @@ import (
 type Service interface {
 	// Health returns a map of health status information.
 	// The keys and values in the map are service-specific.
-	Health() map[string]string
+	Health() HealthStats
 
 	// Close terminates the database connection.
 	// It returns an error if the connection cannot be closed.
@@ -58,53 +57,67 @@ func New(cfg *config.DatabaseConfig) Service {
 	return dbInstance
 }
 
-// Health checks the health of the database connection by pinging the database.
-// It returns a map with keys indicating various health statistics.
-func (s *service) Health() map[string]string {
+type HealthStats struct {
+	Status            string   `json:"status"`
+	Message           string   `json:"message,omitempty"`
+	Warnings          []string `json:"warnings,omitempty"` // Slice to hold multiple warnings
+	Error             string   `json:"error,omitempty"`
+	OpenConnections   int      `json:"open_connections,omitempty"`
+	InUse             int      `json:"in_use,omitempty"`
+	Idle              int      `json:"idle,omitempty"`
+	WaitCount         int64    `json:"wait_count,omitempty"`
+	WaitDuration      string   `json:"wait_duration,omitempty"`
+	MaxIdleClosed     int64    `json:"max_idle_closed,omitempty"`
+	MaxLifetimeClosed int64    `json:"max_lifetime_closed,omitempty"`
+}
+
+func (s *service) Health() HealthStats {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	stats := make(map[string]string)
-
-	// Ping the database
-	err := s.db.PingContext(ctx)
-	if err != nil {
-		stats["status"] = "down"
-		stats["error"] = fmt.Sprintf("db down: %v", err)
+	if err := s.db.PingContext(ctx); err != nil {
 		logger.Default().Error("database: down", "error", err.Error())
-		os.Exit(1)
-		return stats
+		return HealthStats{
+			Status: "down",
+			Error:  fmt.Sprintf("db down: %v", err),
+		}
 	}
 
-	// Database is up, add more statistics
-	stats["status"] = "up"
-	stats["message"] = "It's healthy"
-
-	// Get database stats (like open connections, in use, idle, etc.)
 	dbStats := s.db.Stats()
-	stats["open_connections"] = strconv.Itoa(dbStats.OpenConnections)
-	stats["in_use"] = strconv.Itoa(dbStats.InUse)
-	stats["idle"] = strconv.Itoa(dbStats.Idle)
-	stats["wait_count"] = strconv.FormatInt(dbStats.WaitCount, 10)
-	stats["wait_duration"] = dbStats.WaitDuration.String()
-	stats["max_idle_closed"] = strconv.FormatInt(dbStats.MaxIdleClosed, 10)
-	stats["max_lifetime_closed"] = strconv.FormatInt(dbStats.MaxLifetimeClosed, 10)
-
-	// Evaluate stats to provide a health message
-	if dbStats.OpenConnections > 40 { // Assuming 50 is the max for this example
-		stats["message"] = "The database is experiencing heavy load."
+	
+	stats := HealthStats{
+		Status:            "up",
+		Message:           "It's healthy",
+		OpenConnections:   dbStats.OpenConnections,
+		InUse:             dbStats.InUse,
+		Idle:              dbStats.Idle,
+		WaitCount:         dbStats.WaitCount,
+		WaitDuration:      dbStats.WaitDuration.String(),
+		MaxIdleClosed:     dbStats.MaxIdleClosed,
+		MaxLifetimeClosed: dbStats.MaxLifetimeClosed,
 	}
 
+	// Use consecutive if statements and append to a slice
+	// This way, if 3 things are wrong, you see all 3 warnings in your monitoring tools.
+	if dbStats.OpenConnections > 40 { 
+		stats.Warnings = append(stats.Warnings, "The database is experiencing heavy load.")
+	} 
+	
 	if dbStats.WaitCount > 1000 {
-		stats["message"] = "The database has a high number of wait events, indicating potential bottlenecks."
-	}
-
+		stats.Warnings = append(stats.Warnings, "The database has a high number of wait events, indicating potential bottlenecks.")
+	} 
+	
 	if dbStats.MaxIdleClosed > int64(dbStats.OpenConnections)/2 {
-		stats["message"] = "Many idle connections are being closed, consider revising the connection pool settings."
+		stats.Warnings = append(stats.Warnings, "Many idle connections are being closed, consider revising the connection pool settings.")
+	} 
+	
+	if dbStats.MaxLifetimeClosed > int64(dbStats.OpenConnections)/2 {
+		stats.Warnings = append(stats.Warnings, "Many connections are being closed due to max lifetime, consider increasing max lifetime or revising the connection usage pattern.")
 	}
 
-	if dbStats.MaxLifetimeClosed > int64(dbStats.OpenConnections)/2 {
-		stats["message"] = "Many connections are being closed due to max lifetime, consider increasing max lifetime or revising the connection usage pattern."
+	// If we have warnings, update the main message to reflect degraded performance
+	if len(stats.Warnings) > 0 {
+		stats.Message = "The database is up but experiencing issues."
 	}
 
 	return stats
