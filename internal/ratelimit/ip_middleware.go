@@ -12,10 +12,10 @@ import (
 // IP, for endpoints reached before any authenticated identity exists (e.g.
 // /auth/login, /auth/refresh). Like RateLimitMiddleware, it fails open on
 // Redis errors and logs the failure.
-func IPRateLimitMiddleware(limiter KeyLimiter, perMinute int) func(http.Handler) http.Handler {
+func IPRateLimitMiddleware(limiter KeyLimiter, perMinute int, trustedProxyHops int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			key := "ip:" + clientip.FromRequest(r)
+			key := "ip:" + clientip.FromRequest(r, trustedProxyHops)
 
 			decision, err := limiter.AllowKey(r.Context(), key, WindowMinute, perMinute)
 			if err != nil {

@@ -31,7 +31,7 @@ const (
 // attempts are progressively delayed per caller (guard, keyed by IP + tenant
 // + email) to slow down credential-stuffing and brute-force attempts; the
 // counter resets on a successful login.
-func LoginHandler(users user.Repository, tenants tenant.Repository, refreshTokens refreshtoken.Repository, roles rbac.RoleCache, signer Signer, guard loginguard.Guard, delayCfg config.LoginSecurityConfig) http.HandlerFunc {
+func LoginHandler(users user.Repository, tenants tenant.Repository, refreshTokens refreshtoken.Repository, roles rbac.RoleCache, signer Signer, guard loginguard.Guard, delayCfg config.LoginSecurityConfig, trustedProxyHops int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req LoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -44,7 +44,8 @@ func LoginHandler(users user.Repository, tenants tenant.Repository, refreshToken
 		}
 
 		ctx := r.Context()
-		failureKey := clientip.FromRequest(r) + ":" + req.TenantSlug + ":" + req.Email
+		failureKey := clientip.FromRequest(r, trustedProxyHops) + ":" +
+			truncateKeyPart(req.TenantSlug) + ":" + truncateKeyPart(req.Email)
 
 		fail := func() {
 			delayOnFailure(ctx, guard, delayCfg, failureKey)
@@ -108,7 +109,14 @@ func delayOnFailure(ctx context.Context, guard loginguard.Guard, delayCfg config
 		return
 	}
 
-	delay := (resilience.RetryPolicy{BaseBackoff: delayCfg.DelayBaseBackoff}).Backoff(attempt)
+	// resilience.Backoff computes BaseBackoff << (attempt-1), which overflows
+	// int64 for large attempt counts (~37+ with a 250ms base) and can wrap to
+	// a negative/zero duration — silently disabling the delay for exactly the
+	// sustained attacker this guards against. Clamp the attempt fed into it to
+	// the point where the shifted value would already reach DelayMax, since
+	// growing it further has no effect once capped anyway.
+	policy := resilience.RetryPolicy{BaseBackoff: delayCfg.DelayBaseBackoff}
+	delay := policy.Backoff(clampAttempt(delayCfg.DelayBaseBackoff, delayCfg.DelayMax, attempt))
 	if delay > delayCfg.DelayMax {
 		delay = delayCfg.DelayMax
 	}
@@ -122,6 +130,37 @@ func delayOnFailure(ctx context.Context, guard loginguard.Guard, delayCfg config
 	case <-timer.C:
 	case <-ctx.Done():
 	}
+}
+
+// clampAttempt caps attempt at the number of doublings it takes base to
+// reach max, so the exponential backoff it feeds never shifts far enough to
+// overflow time.Duration's underlying int64.
+func clampAttempt(base, max time.Duration, attempt int) int {
+	if attempt < 1 {
+		return 1
+	}
+	if base <= 0 {
+		return attempt
+	}
+	capped := 1
+	for d := base; d < max; d <<= 1 {
+		capped++
+	}
+	if attempt > capped {
+		return capped
+	}
+	return attempt
+}
+
+// truncateKeyPart bounds a request-supplied string before it becomes part of
+// a Redis key, so a caller can't inflate key size by sending an oversized
+// tenant_slug or email.
+func truncateKeyPart(s string) string {
+	const maxLen = 128
+	if len(s) > maxLen {
+		return s[:maxLen]
+	}
+	return s
 }
 
 // RefreshHandler returns an http.HandlerFunc for POST /auth/refresh.

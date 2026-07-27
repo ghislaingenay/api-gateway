@@ -42,6 +42,7 @@ type Server struct {
 	loginRatePerMinute     int
 	loginGuard             loginguard.Guard
 	loginSecurity          config.LoginSecurityConfig
+	trustedProxyHops       int
 	responseCache          cache.ResponseCache
 	cacheDefaultTTL        time.Duration
 	validationMaxBodyBytes int64
@@ -87,6 +88,7 @@ func NewServer(redisClient *redis.Client) *http.Server {
 	resilienceConfig := config.LoadResilienceConfig()
 	validationConfig := config.LoadValidationConfig()
 	loginSecurityConfig := config.LoadLoginSecurityConfig()
+	clientIPConfig := config.LoadClientIPConfig()
 
 	signer, err := auth.NewSigner(jwtConfig.SigningKID, jwtConfig.SigningPrivateKey)
 	if err != nil {
@@ -121,6 +123,7 @@ func NewServer(redisClient *redis.Client) *http.Server {
 		loginRatePerMinute:     rateLimitConfig.LoginPerMinute,
 		loginGuard:             loginguard.NewRedisGuard(redisClient, loginSecurityConfig.FailureWindow),
 		loginSecurity:          *loginSecurityConfig,
+		trustedProxyHops:       clientIPConfig.TrustedProxyHops,
 		responseCache:          cache.NewResponseCache(redisClient),
 		cacheDefaultTTL:        cacheConfig.DefaultTTL,
 		validationMaxBodyBytes: validationConfig.MaxBodyBytes,

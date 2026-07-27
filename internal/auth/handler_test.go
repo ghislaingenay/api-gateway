@@ -269,7 +269,7 @@ func TestLoginHandler(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(tt.body))
 			rec := httptest.NewRecorder()
 
-			LoginHandler(users, tenants, refreshTokens, roles, signer, guard, config.LoginSecurityConfig{})(rec, req)
+			LoginHandler(users, tenants, refreshTokens, roles, signer, guard, config.LoginSecurityConfig{}, 0)(rec, req)
 
 			if rec.Code != tt.wantStatusCode {
 				t.Fatalf("status = %d, want %d (body=%s)", rec.Code, tt.wantStatusCode, rec.Body.String())
@@ -324,7 +324,7 @@ func TestLoginHandler_ProgressiveDelay(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(body))
 	req.RemoteAddr = "192.0.2.1:12345"
 	rec := httptest.NewRecorder()
-	LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg)(rec, req)
+	LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg, 0)(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
@@ -337,7 +337,7 @@ func TestLoginHandler_ProgressiveDelay(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(body))
 		req.RemoteAddr = "192.0.2.1:12345"
 		rec := httptest.NewRecorder()
-		LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg)(rec, req)
+		LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg, 0)(rec, req)
 	}
 	if guard.failures[key] != 4 {
 		t.Fatalf("failures[%q] = %d, want 4", key, guard.failures[key])
@@ -348,7 +348,7 @@ func TestLoginHandler_ProgressiveDelay(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(successBody))
 	req.RemoteAddr = "192.0.2.1:12345"
 	rec = httptest.NewRecorder()
-	LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg)(rec, req)
+	LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg, 0)(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -357,6 +357,73 @@ func TestLoginHandler_ProgressiveDelay(t *testing.T) {
 	}
 	if _, ok := guard.failures[key]; ok {
 		t.Errorf("failures[%q] still present after reset", key)
+	}
+}
+
+func TestClampAttempt(t *testing.T) {
+	t.Parallel()
+
+	base := 250 * time.Millisecond
+	max := 4 * time.Second
+
+	tests := []struct {
+		name    string
+		attempt int
+		want    int
+	}{
+		{"first attempt", 1, 1},
+		{"below zero clamps to 1", 0, 1},
+		{"grows normally while under max", 3, 3},
+		// base<<4 == 4s == max, so 5 is the last attempt that still changes
+		// the shifted value; anything beyond must clamp to it.
+		{"at the doubling that reaches max", 5, 5},
+		{"just past the cap clamps to 5", 6, 5},
+		// Without clamping, resilience.Backoff's BaseBackoff<<(attempt-1)
+		// overflows int64 well before this and can wrap negative/zero,
+		// silently disabling the delay — this is the regression guard.
+		{"far past the cap still clamps to 5", 1000, 5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := clampAttempt(base, max, tt.attempt); got != tt.want {
+				t.Errorf("clampAttempt(%v, %v, %d) = %d, want %d", base, max, tt.attempt, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDelayOnFailure_NoOverflowForSustainedAttacker(t *testing.T) {
+	t.Parallel()
+
+	guard := newFakeGuard()
+	// Tiny durations so 200 real (bounded) sleeps stay fast; what matters is
+	// the ratio (37+ doublings before max) that used to overflow, not the
+	// absolute scale.
+	delayCfg := config.LoginSecurityConfig{
+		DelayBaseBackoff: 1 * time.Millisecond,
+		DelayMax:         5 * time.Millisecond,
+	}
+
+	// Drive the same key well past the attempt count where the unclamped
+	// shift would overflow (see TestClampAttempt for the exact numbers) and
+	// confirm delayOnFailure keeps returning within a bounded time — the
+	// actual "does the delay stay non-zero/bounded" guarantee is verified
+	// deterministically in TestClampAttempt; this just guards against a
+	// hang or runaway wait if that clamp were ever removed.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			delayOnFailure(context.Background(), guard, delayCfg, "attacker-key")
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("delayOnFailure did not return promptly across 200 sustained failures; possible overflow regression")
 	}
 }
 
