@@ -1,5 +1,3 @@
-// Package health checks connectivity to the gateway's runtime dependencies
-// (Redis, PostgreSQL) for the readiness probe (FEAT-009).
 package health
 
 import (
@@ -41,8 +39,6 @@ type DependencyChecker struct {
 	postgres PostgresPinger
 }
 
-// NewDependencyChecker returns a DependencyChecker backed by the given
-// Redis and PostgreSQL connections.
 func NewDependencyChecker(redis RedisPinger, postgres PostgresPinger) *DependencyChecker {
 	return &DependencyChecker{redis: redis, postgres: postgres}
 }
