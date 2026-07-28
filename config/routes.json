@@ -2,7 +2,7 @@
   {
     "path": "/api/orders/*",
     "method": "GET",
-    "upstream": "http://orders-service:8081",
+    "upstream": "http://localhost:8081",
     "auth_required": true,
     "permissions_required": ["orders:read"],
     "required_params": [
@@ -12,7 +12,7 @@
   {
     "path": "/api/orders",
     "method": "POST",
-    "upstream": "http://orders-service:8081",
+    "upstream": "http://localhost:8081",
     "auth_required": true,
     "permissions_required": ["orders:create"],
     "body_required": true,
@@ -24,7 +24,7 @@
   {
     "path": "/api/inventory/*",
     "method": "GET",
-    "upstream": "http://inventory-service:8082",
+    "upstream": "http://localhost:8082",
     "auth_required": true,
     "permissions_required": [],
     "required_params": [

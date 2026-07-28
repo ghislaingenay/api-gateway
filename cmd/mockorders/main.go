@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
@@ -23,10 +22,7 @@ type order struct {
 }
 
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8081"
-	}
+	port :=  "8081"
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/orders/{id}", getOrderHandler)

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"api-gateway/internal/logger"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -51,6 +52,21 @@ type RouteEntry struct {
 	RequiredParams []RequiredParamEntry `json:"required_params"`
 }
 
+// Upstream follows $env:ENV_NAME syntax to override the upstream with an environment variable, if present, default to localhost
+func overrideUpstreamWithEnv(upstream string) string {
+	if len(upstream) > 5 && upstream[:5] == "$env:" {
+		envVar := upstream[5:]
+		if envValue := os.Getenv(envVar); envValue != "" {
+			return envValue
+		} else {
+			logger.Default().Warn("Missing env for upstream %s", envVar, false)
+			return "localhost"
+		}
+	}
+	return upstream
+}
+
+
 // LoadRoutesConfig reads the static route table from the JSON file at
 // GATEWAY_ROUTES_FILE (default "config/routes.json").
 func LoadRoutesConfig() ([]RouteEntry, error) {
@@ -84,6 +100,8 @@ func LoadRoutesConfig() ([]RouteEntry, error) {
 				return nil, fmt.Errorf("route %s %s: required_params[%q].in must be \"query\" or \"path\", got %q", route.Method, route.Path, p.Name, p.In)
 			}
 		}
+
+		route.Upstream = overrideUpstreamWithEnv(route.Upstream)
 	}
 
 	return routes, nil
