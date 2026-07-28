@@ -112,8 +112,8 @@ func TestNewRoleCache_LoadsSeededRolesAndPermissions(t *testing.T) {
 	}
 
 	permissions := cache.AllPermissions()
-	if len(permissions) != 19 {
-		t.Fatalf("len(AllPermissions()) = %d, want 19 (seeded permission matrix)", len(permissions))
+	if len(permissions) != 22 {
+		t.Fatalf("len(AllPermissions()) = %d, want 22 (seeded permission matrix)", len(permissions))
 	}
 
 	found := false
@@ -148,7 +148,7 @@ func TestNewRoleCache_MigrationIsIdempotent(t *testing.T) {
 	if len(cache.All()) != 3 {
 		t.Errorf("len(All()) = %d after re-migration, want 3 (no duplicates)", len(cache.All()))
 	}
-	if len(cache.AllPermissions()) != 19 {
-		t.Errorf("len(AllPermissions()) = %d after re-migration, want 19 (no duplicates)", len(cache.AllPermissions()))
+	if len(cache.AllPermissions()) != 22 {
+		t.Errorf("len(AllPermissions()) = %d after re-migration, want 22 (no duplicates)", len(cache.AllPermissions()))
 	}
 }
