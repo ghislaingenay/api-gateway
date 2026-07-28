@@ -49,7 +49,7 @@ func createOrderHandler(w http.ResponseWriter, r *http.Request) {
 		Quantity      int    `json:"quantity"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		http.Error(w, `{"error":"invalid_request"}`, 422)
 		return
 	}
 
