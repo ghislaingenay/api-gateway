@@ -13,6 +13,10 @@ build:
 run:
 	@go run cmd/api/main.go
 
+# Run a server (args)
+serve:
+	@go run cmd/$(SERVICE)/main.go
+
 # Seed dev/test users (requires APP_ENV=development)
 seed:
 	@go run cmd/seed/main.go
