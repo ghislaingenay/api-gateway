@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
 )
 
 type inventoryItem struct {
@@ -18,10 +17,7 @@ type inventoryItem struct {
 }
 
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8082"
-	}
+	port := "8082"
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/inventory/{id}", getInventoryItemHandler)

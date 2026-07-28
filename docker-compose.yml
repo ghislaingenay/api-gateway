@@ -66,6 +66,9 @@ services:
       PORT: "8080"
       REDIS_URL: redis://redis:6379
       ALLOW_AUTO_DB_MIGRATION: "false"
+      # Overrides .env's localhost value with the in-compose service name
+      # so the gateway container can reach jwks-service below.
+      JWT_JWKS_URL: http://jwks-service:8083/.well-known/jwks.json
     ports:
       - "8080:8080"
     depends_on:
@@ -102,6 +105,20 @@ services:
       PORT: "8082"
     ports:
       - "8082:8082"
+
+  # Local JWKS publisher (no real auth/identity server exists yet): serves
+  # the public half of .env's JWT_SIGNING_KID/JWT_SIGNING_PRIVATE_KEY so
+  # the gateway's JWKS-backed key store has something to fetch from.
+  jwks-service:
+    image: api-gateway-devtools:local
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: ["mockjwks"]
+    env_file:
+      - .env
+    ports:
+      - "8083:8083"
 
 volumes:
   postgres_data:
