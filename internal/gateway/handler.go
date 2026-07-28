@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
+	"strings"
 
+	"api-gateway/internal/audit"
 	"api-gateway/internal/auth"
 	"api-gateway/internal/logger"
 
@@ -67,6 +70,15 @@ func NewHandler(routes *RouteTable, statusChecker TenantStatusChecker, proxy Pro
 			r = r.WithContext(WithRoute(r.Context(), route))
 		}
 
+		if missing := missingPermissions(claims.Permissions, route.PermissionsRequired); len(missing) > 0 {
+			audit.LogAuthzDecision(r.Context(), false, claims.TenantID, claims.UserID, strings.Join(route.PermissionsRequired, ","))
+			writeForbidden(w, r, "insufficient permissions")
+			return
+		}
+		if len(route.PermissionsRequired) > 0 {
+			audit.LogAuthzDecision(r.Context(), true, claims.TenantID, claims.UserID, strings.Join(route.PermissionsRequired, ","))
+		}
+
 		for _, header := range clientTenantHeaders {
 			r.Header.Del(header)
 		}
@@ -74,6 +86,30 @@ func NewHandler(routes *RouteTable, statusChecker TenantStatusChecker, proxy Pro
 
 		proxy.Proxy(w, r, route.Upstream)
 	})
+}
+
+// missingPermissions returns the subset of required permissions the caller's
+// granted permissions don't cover. A route with no PermissionsRequired is
+// satisfied by any caller (nil result).
+func missingPermissions(granted, required []string) []string {
+	var missing []string
+	for _, permission := range required {
+		if !slices.Contains(granted, permission) {
+			missing = append(missing, permission)
+		}
+	}
+	return missing
+}
+
+func writeForbidden(w http.ResponseWriter, r *http.Request, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"error":   "forbidden",
+		"message": message,
+	}); err != nil {
+		logger.FromContext(r.Context()).Error("gateway: failed to write forbidden response", "error", err.Error())
+	}
 }
 
 func writeError(w http.ResponseWriter, r *http.Request, status int, code, message string) {

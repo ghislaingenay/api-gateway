@@ -19,6 +19,29 @@ import (
 	"github.com/google/uuid"
 )
 
+// testCookieConfig is a minimal CookieConfig used across handler tests.
+var testCookieConfig = &config.CookieConfig{Secure: true, SameSite: http.SameSiteLaxMode}
+
+// refreshCookieFrom extracts the refresh token cookie from a recorded
+// response, if any.
+func refreshCookieFrom(rec *httptest.ResponseRecorder) *http.Cookie {
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == config.RefreshTokenCookieName {
+			return c
+		}
+	}
+	return nil
+}
+
+// requestWithRefreshCookie builds a request carrying the given raw refresh
+// token as a cookie, the way a browser would after LoginHandler/
+// RefreshHandler set it.
+func requestWithRefreshCookie(method, target, rawToken string) *http.Request {
+	req := httptest.NewRequest(method, target, nil)
+	req.AddCookie(&http.Cookie{Name: config.RefreshTokenCookieName, Value: rawToken})
+	return req
+}
+
 // --- fakes ---
 
 type fakeUserRepo struct {
@@ -269,7 +292,7 @@ func TestLoginHandler(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(tt.body))
 			rec := httptest.NewRecorder()
 
-			LoginHandler(users, tenants, refreshTokens, roles, signer, guard, config.LoginSecurityConfig{}, 0)(rec, req)
+			LoginHandler(users, tenants, refreshTokens, roles, signer, guard, config.LoginSecurityConfig{}, 0, testCookieConfig)(rec, req)
 
 			if rec.Code != tt.wantStatusCode {
 				t.Fatalf("status = %d, want %d (body=%s)", rec.Code, tt.wantStatusCode, rec.Body.String())
@@ -290,11 +313,21 @@ func TestLoginHandler(t *testing.T) {
 			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 				t.Fatalf("unmarshal: %v", err)
 			}
-			if got.AccessToken == "" || got.RefreshToken == "" {
-				t.Errorf("LoginResponse = %+v, want non-empty tokens", got)
+			if got.AccessToken == "" {
+				t.Errorf("LoginResponse = %+v, want non-empty access token", got)
 			}
 			if got.TokenType != "Bearer" {
 				t.Errorf("TokenType = %q, want Bearer", got.TokenType)
+			}
+			cookie := refreshCookieFrom(rec)
+			if cookie == nil || cookie.Value == "" {
+				t.Fatal("no refresh_token cookie set")
+			}
+			if !cookie.HttpOnly {
+				t.Error("refresh_token cookie not HttpOnly")
+			}
+			if !cookie.Secure {
+				t.Error("refresh_token cookie not Secure")
 			}
 			if len(refreshTokens.byHash) != 1 {
 				t.Errorf("stored refresh tokens = %d, want 1", len(refreshTokens.byHash))
@@ -324,7 +357,7 @@ func TestLoginHandler_ProgressiveDelay(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(body))
 	req.RemoteAddr = "192.0.2.1:12345"
 	rec := httptest.NewRecorder()
-	LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg, 0)(rec, req)
+	LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg, 0, testCookieConfig)(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
@@ -337,7 +370,7 @@ func TestLoginHandler_ProgressiveDelay(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(body))
 		req.RemoteAddr = "192.0.2.1:12345"
 		rec := httptest.NewRecorder()
-		LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg, 0)(rec, req)
+		LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg, 0, testCookieConfig)(rec, req)
 	}
 	if guard.failures[key] != 4 {
 		t.Fatalf("failures[%q] = %d, want 4", key, guard.failures[key])
@@ -348,7 +381,7 @@ func TestLoginHandler_ProgressiveDelay(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(successBody))
 	req.RemoteAddr = "192.0.2.1:12345"
 	rec = httptest.NewRecorder()
-	LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg, 0)(rec, req)
+	LoginHandler(users, tenants, refreshTokens, roles, signer, guard, delayCfg, 0, testCookieConfig)(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -442,11 +475,10 @@ func TestRefreshHandler(t *testing.T) {
 			ID: oldID, UserID: userID, TokenHash: hash, ExpiresAt: time.Now().Add(time.Hour),
 		}
 
-		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", bytes.NewBufferString(
-			fmt.Sprintf(`{"refresh_token":%q}`, raw)))
+		req := requestWithRefreshCookie(http.MethodPost, "/auth/refresh", raw)
 		rec := httptest.NewRecorder()
 
-		RefreshHandler(refreshTokens, users, roles, signer)(rec, req)
+		RefreshHandler(refreshTokens, users, roles, signer, testCookieConfig)(rec, req)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
@@ -456,10 +488,14 @@ func TestRefreshHandler(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
-		if got.AccessToken == "" || got.RefreshToken == "" {
-			t.Errorf("RefreshResponse = %+v, want non-empty tokens", got)
+		if got.AccessToken == "" {
+			t.Errorf("RefreshResponse = %+v, want non-empty access token", got)
 		}
-		if got.RefreshToken == raw {
+		newCookie := refreshCookieFrom(rec)
+		if newCookie == nil || newCookie.Value == "" {
+			t.Fatal("no refresh_token cookie set on refresh")
+		}
+		if newCookie.Value == raw {
 			t.Error("new refresh token equals old raw token, want rotation")
 		}
 
@@ -468,10 +504,9 @@ func TestRefreshHandler(t *testing.T) {
 		}
 
 		// Reusing the old (now revoked) token must fail.
-		req2 := httptest.NewRequest(http.MethodPost, "/auth/refresh", bytes.NewBufferString(
-			fmt.Sprintf(`{"refresh_token":%q}`, raw)))
+		req2 := requestWithRefreshCookie(http.MethodPost, "/auth/refresh", raw)
 		rec2 := httptest.NewRecorder()
-		RefreshHandler(refreshTokens, users, roles, signer)(rec2, req2)
+		RefreshHandler(refreshTokens, users, roles, signer, testCookieConfig)(rec2, req2)
 		if rec2.Code != http.StatusUnauthorized {
 			t.Errorf("reused token status = %d, want 401", rec2.Code)
 		}
@@ -482,9 +517,23 @@ func TestRefreshHandler(t *testing.T) {
 		refreshTokens := newFakeRefreshRepo()
 		signer := &fakeSigner{}
 
-		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", bytes.NewBufferString(`{"refresh_token":"does-not-exist"}`))
+		req := requestWithRefreshCookie(http.MethodPost, "/auth/refresh", "does-not-exist")
 		rec := httptest.NewRecorder()
-		RefreshHandler(refreshTokens, users, roles, signer)(rec, req)
+		RefreshHandler(refreshTokens, users, roles, signer, testCookieConfig)(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("status = %d, want 401", rec.Code)
+		}
+	})
+
+	t.Run("missing cookie rejected", func(t *testing.T) {
+		_, _, _, _, users, roles := newFixtures()
+		refreshTokens := newFakeRefreshRepo()
+		signer := &fakeSigner{}
+
+		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+		rec := httptest.NewRecorder()
+		RefreshHandler(refreshTokens, users, roles, signer, testCookieConfig)(rec, req)
 
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("status = %d, want 401", rec.Code)
@@ -501,10 +550,9 @@ func TestRefreshHandler(t *testing.T) {
 			ID: uuid.New(), UserID: userID, TokenHash: hash, ExpiresAt: time.Now().Add(-time.Hour),
 		}
 
-		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", bytes.NewBufferString(
-			fmt.Sprintf(`{"refresh_token":%q}`, raw)))
+		req := requestWithRefreshCookie(http.MethodPost, "/auth/refresh", raw)
 		rec := httptest.NewRecorder()
-		RefreshHandler(refreshTokens, users, roles, signer)(rec, req)
+		RefreshHandler(refreshTokens, users, roles, signer, testCookieConfig)(rec, req)
 
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("status = %d, want 401", rec.Code)
@@ -523,10 +571,9 @@ func TestRefreshHandler(t *testing.T) {
 			ExpiresAt: time.Now().Add(time.Hour), RevokedAt: &revokedAt,
 		}
 
-		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", bytes.NewBufferString(
-			fmt.Sprintf(`{"refresh_token":%q}`, raw)))
+		req := requestWithRefreshCookie(http.MethodPost, "/auth/refresh", raw)
 		rec := httptest.NewRecorder()
-		RefreshHandler(refreshTokens, users, roles, signer)(rec, req)
+		RefreshHandler(refreshTokens, users, roles, signer, testCookieConfig)(rec, req)
 
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("status = %d, want 401", rec.Code)
@@ -535,7 +582,7 @@ func TestRefreshHandler(t *testing.T) {
 }
 
 func TestLogoutHandler(t *testing.T) {
-	t.Run("revokes the given token", func(t *testing.T) {
+	t.Run("revokes the given token and clears the cookie", func(t *testing.T) {
 		_, _, userID, _, _, _ := newFixtures()
 		refreshTokens := newFakeRefreshRepo()
 
@@ -544,10 +591,9 @@ func TestLogoutHandler(t *testing.T) {
 			ID: uuid.New(), UserID: userID, TokenHash: hash, ExpiresAt: time.Now().Add(time.Hour),
 		}
 
-		req := httptest.NewRequest(http.MethodPost, "/auth/logout", bytes.NewBufferString(
-			fmt.Sprintf(`{"refresh_token":%q}`, raw)))
+		req := requestWithRefreshCookie(http.MethodPost, "/auth/logout", raw)
 		rec := httptest.NewRecorder()
-		LogoutHandler(refreshTokens)(rec, req)
+		LogoutHandler(refreshTokens, testCookieConfig)(rec, req)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
@@ -555,14 +601,30 @@ func TestLogoutHandler(t *testing.T) {
 		if refreshTokens.byHash[hash].RevokedAt == nil {
 			t.Error("token not revoked after logout")
 		}
+		cleared := refreshCookieFrom(rec)
+		if cleared == nil || cleared.MaxAge >= 0 {
+			t.Errorf("refresh_token cookie not cleared, got %+v", cleared)
+		}
 	})
 
 	t.Run("unknown token is idempotent, still 200", func(t *testing.T) {
 		refreshTokens := newFakeRefreshRepo()
 
-		req := httptest.NewRequest(http.MethodPost, "/auth/logout", bytes.NewBufferString(`{"refresh_token":"does-not-exist"}`))
+		req := requestWithRefreshCookie(http.MethodPost, "/auth/logout", "does-not-exist")
 		rec := httptest.NewRecorder()
-		LogoutHandler(refreshTokens)(rec, req)
+		LogoutHandler(refreshTokens, testCookieConfig)(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200", rec.Code)
+		}
+	})
+
+	t.Run("missing cookie is idempotent, still 200", func(t *testing.T) {
+		refreshTokens := newFakeRefreshRepo()
+
+		req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+		rec := httptest.NewRecorder()
+		LogoutHandler(refreshTokens, testCookieConfig)(rec, req)
 
 		if rec.Code != http.StatusOK {
 			t.Errorf("status = %d, want 200", rec.Code)

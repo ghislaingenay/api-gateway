@@ -18,6 +18,7 @@ import (
 
 	"github.com/MicahParks/jwkset"
 	"github.com/golang-jwt/jwt/v5"
+	_ "github.com/joho/godotenv/autoload"
 )
 
 func main() {

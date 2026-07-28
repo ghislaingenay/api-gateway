@@ -9,8 +9,8 @@ import (
 
 	"api-gateway/config"
 	"api-gateway/internal/clientip"
-	"api-gateway/internal/loginguard"
 	"api-gateway/internal/logger"
+	"api-gateway/internal/loginguard"
 	"api-gateway/internal/rbac"
 	"api-gateway/internal/refreshtoken"
 	"api-gateway/internal/resilience"
@@ -31,7 +31,7 @@ const (
 // attempts are progressively delayed per caller (guard, keyed by IP + tenant
 // + email) to slow down credential-stuffing and brute-force attempts; the
 // counter resets on a successful login.
-func LoginHandler(users user.Repository, tenants tenant.Repository, refreshTokens refreshtoken.Repository, roles rbac.RoleCache, signer Signer, guard loginguard.Guard, delayCfg config.LoginSecurityConfig, trustedProxyHops int) http.HandlerFunc {
+func LoginHandler(users user.Repository, tenants tenant.Repository, refreshTokens refreshtoken.Repository, roles rbac.RoleCache, signer Signer, guard loginguard.Guard, delayCfg config.LoginSecurityConfig, trustedProxyHops int, cookieCfg *config.CookieConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req LoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -79,12 +79,13 @@ func LoginHandler(users user.Repository, tenants tenant.Repository, refreshToken
 			return
 		}
 
-		resp, err := issueTokenPair(ctx, refreshTokens, signer, *u, *role)
+		resp, rawRefresh, refreshExpiresAt, err := issueTokenPair(ctx, refreshTokens, signer, *u, *role)
 		if err != nil {
 			logger.FromContext(ctx).Error("authhandler: login: issue tokens", "user_id", u.ID.String(), "error", err.Error())
 			writeError(w, r, http.StatusInternalServerError, "internal_error", "could not issue tokens")
 			return
 		}
+		setRefreshCookie(w, cookieCfg, rawRefresh, refreshExpiresAt)
 
 		if err := users.UpdateLastLoginAt(ctx, u.ID, time.Now()); err != nil {
 			logger.FromContext(ctx).Warn("authhandler: login: update last_login_at", "user_id", u.ID.String(), "error", err.Error())
@@ -163,22 +164,20 @@ func truncateKeyPart(s string) string {
 	return s
 }
 
-// RefreshHandler returns an http.HandlerFunc for POST /auth/refresh.
-func RefreshHandler(refreshTokens refreshtoken.Repository, users user.Repository, roles rbac.RoleCache, signer Signer) http.HandlerFunc {
+// RefreshHandler returns an http.HandlerFunc for POST /auth/refresh. The
+// refresh token is read from the httpOnly cookie set by LoginHandler /
+// RefreshHandler itself, never from the request body.
+func RefreshHandler(refreshTokens refreshtoken.Repository, users user.Repository, roles rbac.RoleCache, signer Signer, cookieCfg *config.CookieConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req RefreshRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, r, http.StatusBadRequest, "invalid_request", "malformed request body")
-			return
-		}
-		if err := rules.Validate(req); err != nil {
-			writeError(w, r, http.StatusBadRequest, "invalid_request", "refresh_token is required")
+		rawRefresh, err := readRefreshCookie(r)
+		if err != nil {
+			writeInvalidToken(w, r)
 			return
 		}
 
 		ctx := r.Context()
 
-		existing, err := refreshTokens.GetByHash(ctx, HashRefreshToken(req.RefreshToken))
+		existing, err := refreshTokens.GetByHash(ctx, HashRefreshToken(rawRefresh))
 		if err != nil {
 			writeInvalidToken(w, r)
 			return
@@ -207,12 +206,13 @@ func RefreshHandler(refreshTokens refreshtoken.Repository, users user.Repository
 			return
 		}
 
-		resp, err := issueTokenPair(ctx, refreshTokens, signer, *u, *role)
+		resp, newRawRefresh, refreshExpiresAt, err := issueTokenPair(ctx, refreshTokens, signer, *u, *role)
 		if err != nil {
 			logger.FromContext(ctx).Error("authhandler: refresh: issue tokens", "user_id", u.ID.String(), "error", err.Error())
 			writeError(w, r, http.StatusInternalServerError, "internal_error", "could not issue tokens")
 			return
 		}
+		setRefreshCookie(w, cookieCfg, newRawRefresh, refreshExpiresAt)
 
 		writeJSON(w, r, http.StatusOK, resp)
 	}
@@ -220,29 +220,22 @@ func RefreshHandler(refreshTokens refreshtoken.Repository, users user.Repository
 
 // LogoutHandler returns an http.HandlerFunc for POST /auth/logout. It
 // requires a valid access token (the route must be wrapped with JWT auth)
-// and is idempotent: revoking an already-revoked or unknown refresh token
-// still returns 200.
-func LogoutHandler(refreshTokens refreshtoken.Repository) http.HandlerFunc {
+// and is idempotent: revoking an already-revoked, unknown, or missing
+// refresh token cookie still returns 200.
+func LogoutHandler(refreshTokens refreshtoken.Repository, cookieCfg *config.CookieConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req LogoutRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, r, http.StatusBadRequest, "invalid_request", "malformed request body")
-			return
-		}
-		if err := rules.Validate(req); err != nil {
-			writeError(w, r, http.StatusBadRequest, "invalid_request", "refresh_token is required")
-			return
-		}
-
 		ctx := r.Context()
-		existing, err := refreshTokens.GetByHash(ctx, HashRefreshToken(req.RefreshToken))
-		if err == nil {
-			if err := refreshTokens.Revoke(ctx, existing.ID); err != nil {
-				logger.FromContext(ctx).Error("authhandler: logout: revoke token", "error", err.Error())
+		if rawRefresh, err := readRefreshCookie(r); err == nil {
+			existing, err := refreshTokens.GetByHash(ctx, HashRefreshToken(rawRefresh))
+			if err == nil {
+				if err := refreshTokens.Revoke(ctx, existing.ID); err != nil {
+					logger.FromContext(ctx).Error("authhandler: logout: revoke token", "error", err.Error())
+				}
+			} else if !errors.Is(err, refreshtoken.ErrNotFound) {
+				logger.FromContext(ctx).Error("authhandler: logout: lookup token", "error", err.Error())
 			}
-		} else if !errors.Is(err, refreshtoken.ErrNotFound) {
-			logger.FromContext(ctx).Error("authhandler: logout: lookup token", "error", err.Error())
 		}
+		clearRefreshCookie(w, cookieCfg)
 
 		writeJSON(w, r, http.StatusOK, map[string]string{"message": "logged out"})
 	}
@@ -277,8 +270,10 @@ func MeHandler(users user.Repository, roles rbac.RoleCache) http.HandlerFunc {
 }
 
 // issueTokenPair signs a new access token and generates+stores a new
-// refresh token for u.
-func issueTokenPair(ctx context.Context, refreshTokens refreshtoken.Repository, signer Signer, u user.User, role rbac.Role) (LoginResponse, error) {
+// refresh token for u. The raw refresh token and its expiry are returned
+// alongside the response body so the caller can set the refresh cookie —
+// the raw token itself never appears in LoginResponse/RefreshResponse JSON.
+func issueTokenPair(ctx context.Context, refreshTokens refreshtoken.Repository, signer Signer, u user.User, role rbac.Role) (resp LoginResponse, rawRefresh string, refreshExpiresAt time.Time, err error) {
 	now := time.Now()
 	claims := CustomClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -297,29 +292,69 @@ func issueTokenPair(ctx context.Context, refreshTokens refreshtoken.Repository, 
 
 	accessToken, err := signer.Sign(claims)
 	if err != nil {
-		return LoginResponse{}, err
+		return LoginResponse{}, "", time.Time{}, err
 	}
 
 	rawRefresh, hashedRefresh, err := GenerateRefreshToken()
 	if err != nil {
-		return LoginResponse{}, err
+		return LoginResponse{}, "", time.Time{}, err
 	}
 
+	refreshExpiresAt = now.Add(refreshTokenTTL)
 	if err := refreshTokens.Create(ctx, refreshtoken.RefreshToken{
 		ID:        uuid.New(),
 		UserID:    u.ID,
 		TokenHash: hashedRefresh,
-		ExpiresAt: now.Add(refreshTokenTTL),
+		ExpiresAt: refreshExpiresAt,
 	}); err != nil {
-		return LoginResponse{}, err
+		return LoginResponse{}, "", time.Time{}, err
 	}
 
 	return LoginResponse{
-		AccessToken:  accessToken,
-		RefreshToken: rawRefresh,
-		ExpiresIn:    int(accessTokenTTL.Seconds()),
-		TokenType:    "Bearer",
-	}, nil
+		AccessToken: accessToken,
+		ExpiresIn:   int(accessTokenTTL.Seconds()),
+		TokenType:   "Bearer",
+	}, rawRefresh, refreshExpiresAt, nil
+}
+
+// setRefreshCookie writes the httpOnly refresh token cookie. Path is scoped
+// to /auth so the token isn't sent on every proxied /api/* request.
+func setRefreshCookie(w http.ResponseWriter, cfg *config.CookieConfig, rawToken string, expiresAt time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     config.RefreshTokenCookieName,
+		Value:    rawToken,
+		Path:     config.RefreshTokenCookiePath,
+		Domain:   cfg.Domain,
+		Expires:  expiresAt,
+		Secure:   cfg.Secure,
+		HttpOnly: true,
+		SameSite: cfg.SameSite,
+	})
+}
+
+// clearRefreshCookie expires the refresh token cookie immediately, for use
+// on logout.
+func clearRefreshCookie(w http.ResponseWriter, cfg *config.CookieConfig) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     config.RefreshTokenCookieName,
+		Value:    "",
+		Path:     config.RefreshTokenCookiePath,
+		Domain:   cfg.Domain,
+		MaxAge:   -1,
+		Secure:   cfg.Secure,
+		HttpOnly: true,
+		SameSite: cfg.SameSite,
+	})
+}
+
+// readRefreshCookie extracts the raw refresh token from the request's
+// httpOnly cookie.
+func readRefreshCookie(r *http.Request) (string, error) {
+	c, err := r.Cookie(config.RefreshTokenCookieName)
+	if err != nil {
+		return "", err
+	}
+	return c.Value, nil
 }
 
 func writeInvalidCredentials(w http.ResponseWriter, r *http.Request) {

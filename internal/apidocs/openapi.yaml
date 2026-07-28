@@ -102,7 +102,11 @@ paths:
       tags: [Auth]
       operationId: login
       summary: Log in
-      description: Exchanges tenant-scoped email/password credentials for an access/refresh token pair.
+      description: >-
+        Exchanges tenant-scoped email/password credentials for an access
+        token. The refresh token is not included in the response body —
+        it's set as an httpOnly, path-scoped (/auth) cookie, so client-side
+        JS never has access to it.
       security: []
       requestBody:
         required: true
@@ -113,6 +117,14 @@ paths:
       responses:
         "200":
           description: Login succeeded.
+          headers:
+            Set-Cookie:
+              description: >-
+                httpOnly refresh_token cookie, scoped to /auth, valid for 7
+                days.
+              schema:
+                type: string
+                example: refresh_token=<token>; Path=/auth; HttpOnly; Secure; SameSite=Lax
           content:
             application/json:
               schema:
@@ -131,25 +143,26 @@ paths:
       tags: [Auth]
       operationId: refreshTokens
       summary: Refresh tokens
-      description: Rotates a valid refresh token for a new access/refresh token pair.
+      description: >-
+        Rotates the caller's refresh token (read from the refresh_token
+        cookie, not a request body) for a new access token and a new
+        refresh_token cookie.
       security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RefreshRequest"
       responses:
         "200":
           description: Refresh succeeded.
+          headers:
+            Set-Cookie:
+              description: New httpOnly refresh_token cookie, scoped to /auth.
+              schema:
+                type: string
+                example: refresh_token=<token>; Path=/auth; HttpOnly; Secure; SameSite=Lax
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
         "401":
-          description: Invalid or expired refresh token.
+          description: Missing, invalid, or expired refresh token cookie.
           content:
             application/json:
               schema:
@@ -160,18 +173,21 @@ paths:
       tags: [Auth]
       operationId: logout
       summary: Log out
-      description: Revokes a refresh token. Idempotent — revoking an unknown or already-revoked token still returns 200.
+      description: >-
+        Revokes the caller's refresh token (read from the refresh_token
+        cookie) and clears the cookie. Idempotent — an unknown,
+        already-revoked, or missing refresh token still returns 200.
       security:
         - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/LogoutRequest"
       responses:
         "200":
           description: Logged out.
+          headers:
+            Set-Cookie:
+              description: Clears the refresh_token cookie.
+              schema:
+                type: string
+                example: refresh_token=; Path=/auth; HttpOnly; Max-Age=0
           content:
             application/json:
               schema:
@@ -180,8 +196,6 @@ paths:
                   message:
                     type: string
                     example: logged out
-        "400":
-          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -396,26 +410,10 @@ components:
         tenant_slug:
           type: string
 
-    RefreshRequest:
-      type: object
-      required: [refresh_token]
-      properties:
-        refresh_token:
-          type: string
-
-    LogoutRequest:
-      type: object
-      required: [refresh_token]
-      properties:
-        refresh_token:
-          type: string
-
     TokenResponse:
       type: object
       properties:
         access_token:
-          type: string
-        refresh_token:
           type: string
         expires_in:
           type: integer

@@ -37,13 +37,20 @@ INSERT INTO permissions (name, resource, action, description) VALUES
 ('roles:read', 'roles', 'read', 'View available roles and permissions'),
 ('roles:assign', 'roles', 'assign', 'Assign roles to users'),
 
+-- Permissions
+('permissions:read', 'permissions', 'read', 'View available permissions'),
+
 -- Audit logs
 ('audit_logs:read', 'audit_logs', 'read', 'View audit logs and activity history'),
 
 -- API Keys
 ('api_keys:create', 'api_keys', 'create', 'Generate new API keys'),
 ('api_keys:read', 'api_keys', 'read', 'View API keys'),
-('api_keys:revoke', 'api_keys', 'revoke', 'Revoke API keys');
+('api_keys:revoke', 'api_keys', 'revoke', 'Revoke API keys'),
+
+-- Orders
+('orders:read', 'orders', 'read', 'View orders'),
+('orders:create', 'orders', 'create', 'Create new orders');
 
 -- +goose Down
 DROP TABLE IF EXISTS permissions;

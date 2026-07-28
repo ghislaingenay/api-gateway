@@ -34,6 +34,7 @@ func ValidationMiddleware(routes RouteResolver, maxBodyBytes int64) func(http.Ha
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			route, ok := gateway.RouteFromContext(r.Context())
+
 			if !ok {
 				route, ok = routes.Resolve(r.Method, r.URL.Path)
 				if ok {
