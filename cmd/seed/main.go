@@ -22,6 +22,55 @@ type seedUser struct {
 	role  string
 }
 
+type seedPermission struct {
+	name        string
+	resource    string
+	action      string
+	description string
+}
+
+var seedPermissions = []seedPermission{
+	// User management
+	{"users:create", "users", "create", "Create new users within tenant"},
+	{"users:read", "users", "read", "View user information"},
+	{"users:update", "users", "update", "Update user details and roles"},
+	{"users:delete", "users", "delete", "Delete users from tenant"},
+
+	// Tenant management
+	{"tenants:create", "tenants", "create", "Create new tenants (super admin only)"},
+	{"tenants:read", "tenants", "read", "View tenant information"},
+	{"tenants:update", "tenants", "update", "Update tenant settings and configuration"},
+	{"tenants:delete", "tenants", "delete", "Delete tenant (super admin only)"},
+
+	// Billing
+	{"billing:read", "billing", "read", "View billing information and invoices"},
+	{"billing:update", "billing", "update", "Update payment methods and subscription"},
+	{"billing:delete", "billing", "delete", "Cancel subscription and delete payment methods"},
+
+	// Settings
+	{"settings:read", "settings", "read", "View application settings"},
+	{"settings:update", "settings", "update", "Update application settings and configuration"},
+
+	// Roles
+	{"roles:read", "roles", "read", "View available roles and permissions"},
+	{"roles:assign", "roles", "assign", "Assign roles to users"},
+
+	// Permissions
+	{"permissions:read", "permissions", "read", "View available permissions"},
+
+	// Audit logs
+	{"audit_logs:read", "audit_logs", "read", "View audit logs and activity history"},
+
+	// API Keys
+	{"api_keys:create", "api_keys", "create", "Generate new API keys"},
+	{"api_keys:read", "api_keys", "read", "View API keys"},
+	{"api_keys:revoke", "api_keys", "revoke", "Revoke API keys"},
+
+	// Orders
+	{"orders:read", "orders", "read", "View orders"},
+	{"orders:create", "orders", "create", "Create new orders"},
+}
+
 var seedTenant = struct {
 	name string
 	slug string
@@ -48,6 +97,19 @@ func main() {
 		logger.Default().Error("seed: hash password", "error", err.Error())
 		os.Exit(1)
 	}
+
+	for _, p := range seedPermissions {
+		_, err := db.ExecContext(ctx, `
+			INSERT INTO permissions (name, resource, action, description)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (name) DO UPDATE SET resource = EXCLUDED.resource, action = EXCLUDED.action, description = EXCLUDED.description
+		`, p.name, p.resource, p.action, p.description)
+		if err != nil {
+			logger.Default().Error("seed: upsert permission", "name", p.name, "error", err.Error())
+			os.Exit(1)
+		}
+	}
+	logger.Default().Info("seed: permissions ready", "count", len(seedPermissions))
 
 	var tenantID uuid.UUID
 	err = db.QueryRowContext(ctx, `
