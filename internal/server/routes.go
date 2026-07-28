@@ -31,7 +31,7 @@ func (s *Server) RegisterRoutes() http.Handler {
 
 	mux.Handle("GET /roles", s.requirePermission("roles:read",
 		ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(rbac.RolesHandler(s.roleCache))))
-	mux.Handle("GET /permissions", s.requirePermission("roles:read",
+	mux.Handle("GET /permissions", s.requirePermission("permissions:read",
 		ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(rbac.PermissionsHandler(s.roleCache))))
 
 	// Concurrency cap runs outermost so a flood is rejected before it even
@@ -39,10 +39,10 @@ func (s *Server) RegisterRoutes() http.Handler {
 	loginConcurrency := ratelimit.ConcurrencyLimitMiddleware(s.loginSecurity.MaxConcurrent)
 	loginIPLimit := ratelimit.IPRateLimitMiddleware(s.ipLimiter, s.loginRatePerMinute, s.trustedProxyHops)
 	mux.Handle("POST /auth/login", loginConcurrency(loginIPLimit(
-		auth.LoginHandler(s.userRepo, s.tenantRepo, s.refreshTokens, s.roleCache, s.signer, s.loginGuard, s.loginSecurity, s.trustedProxyHops))))
+		auth.LoginHandler(s.userRepo, s.tenantRepo, s.refreshTokens, s.roleCache, s.signer, s.loginGuard, s.loginSecurity, s.trustedProxyHops, s.cookieConfig))))
 	mux.Handle("POST /auth/refresh", loginConcurrency(loginIPLimit(
-		auth.RefreshHandler(s.refreshTokens, s.userRepo, s.roleCache, s.signer))))
-	mux.Handle("POST /auth/logout", s.requireAuth(auth.LogoutHandler(s.refreshTokens)))
+		auth.RefreshHandler(s.refreshTokens, s.userRepo, s.roleCache, s.signer, s.cookieConfig))))
+	mux.Handle("POST /auth/logout", s.requireAuth(auth.LogoutHandler(s.refreshTokens, s.cookieConfig)))
 	mux.Handle("GET /auth/me", s.requireAuth(auth.MeHandler(s.userRepo, s.roleCache)))
 
 	mux.Handle("/api/", auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(
@@ -122,13 +122,34 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.Handler {
 	return auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(next)
 }
 
+// corsMiddleware sets CORS headers. Requests from an origin in
+// s.corsConfig's allowlist get that exact origin echoed back with
+// credentials enabled, so browsers will send/accept the httpOnly refresh
+// token cookie cross-origin (which a wildcard Access-Control-Allow-Origin
+// can never do together with Access-Control-Allow-Credentials: true — the
+// spec disallows that combination). Any other origin (or an empty
+// allowlist, the default) falls back to the previous wildcard,
+// non-credentialed behavior, so existing bearer-token-only callers are
+// unaffected.
+//
+// CSRF note: the refresh cookie is scoped SameSite=Lax by default
+// (config.LoadCookieConfig), which blocks cross-site POSTs from carrying it
+// in modern browsers. No separate CSRF-token mechanism is implemented; the
+// X-CSRF-Token entry in Access-Control-Allow-Headers below is a reserved
+// placeholder, not an enforced check.
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Set CORS headers
-		w.Header().Set("Access-Control-Allow-Origin", "*") // Replace "*" with specific origins if needed
+		origin := r.Header.Get("Origin")
+		if s.corsConfig.IsAllowedOrigin(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Add("Vary", "Origin")
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Credentials", "false")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token")
-		w.Header().Set("Access-Control-Allow-Credentials", "false") // Set to "true" if credentials are required
 
 		// Handle preflight OPTIONS requests
 		if r.Method == http.MethodOptions {

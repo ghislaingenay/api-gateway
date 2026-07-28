@@ -51,6 +51,8 @@ type Server struct {
 	tenantRepo             tenant.Repository
 	refreshTokens          refreshtoken.Repository
 	signer                 auth.Signer
+	cookieConfig           *config.CookieConfig
+	corsConfig             *config.CORSConfig
 }
 
 func NewServer(redisClient *redis.Client) *http.Server {
@@ -89,6 +91,8 @@ func NewServer(redisClient *redis.Client) *http.Server {
 	validationConfig := config.LoadValidationConfig()
 	loginSecurityConfig := config.LoadLoginSecurityConfig()
 	clientIPConfig := config.LoadClientIPConfig()
+	cookieConfig := config.LoadCookieConfig(config.LoadAppConfig())
+	corsConfig := config.LoadCORSConfig()
 
 	signer, err := auth.NewSigner(jwtConfig.SigningKID, jwtConfig.SigningPrivateKey)
 	if err != nil {
@@ -132,6 +136,8 @@ func NewServer(redisClient *redis.Client) *http.Server {
 		tenantRepo:             tenantRepo,
 		refreshTokens:          refreshtoken.NewRepository(dbService.GetDB()),
 		signer:                 signer,
+		cookieConfig:           cookieConfig,
+		corsConfig:             corsConfig,
 	}
 
 	// Declare Server config
