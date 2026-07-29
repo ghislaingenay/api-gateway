@@ -33,27 +33,12 @@ func (w Window) Duration() time.Duration {
 
 const keyPrefix = "ratelimit:"
 
-// incrScript atomically increments the current bucket (initializing its
+// incrFunc atomically increments the current bucket (initializing its
 // expiry on first write) and reads the previous bucket's count, so the two
 // reads used by the sliding-window approximation never race against a
-// concurrent request for the same tenant/user.
-const incrScript = `
-local current = redis.call('INCR', KEYS[1])
-if current == 1 then
-	redis.call('PEXPIRE', KEYS[1], ARGV[1])
-end
-local previous = redis.call('GET', KEYS[2])
-if previous == false then
-	previous = '0'
-end
-return {current, previous}
-`
-
-// bothWindowsScript runs the same current/previous bucket increment as
-// incrScript for the minute window (KEYS[1..2], ARGV[1]) and the hour
-// window (KEYS[3..4], ARGV[2]) in one round trip, so a combined check
-// against both windows costs a single Redis call instead of two.
-const bothWindowsScript = `
+// concurrent request for the same tenant/user. Shared by incrScript and
+// bothWindowsScript via string concatenation so the two never drift apart.
+const incrFunc = `
 local function incr(curKey, prevKey, ttl)
 	local current = redis.call('INCR', curKey)
 	if current == 1 then
@@ -65,7 +50,18 @@ local function incr(curKey, prevKey, ttl)
 	end
 	return {current, previous}
 end
+`
 
+// incrScript checks a single window: KEYS[1..2] are its current/previous
+// bucket keys, ARGV[1] is the current bucket's expiry in ms.
+const incrScript = incrFunc + `
+return incr(KEYS[1], KEYS[2], ARGV[1])
+`
+
+// bothWindowsScript checks the minute window (KEYS[1..2], ARGV[1]) and the
+// hour window (KEYS[3..4], ARGV[2]) in one round trip, so a combined check
+// against both windows costs a single Redis call instead of two.
+const bothWindowsScript = incrFunc + `
 local minute = incr(KEYS[1], KEYS[2], ARGV[1])
 local hour = incr(KEYS[3], KEYS[4], ARGV[2])
 return {minute[1], minute[2], hour[1], hour[2]}

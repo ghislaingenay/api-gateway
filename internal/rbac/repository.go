@@ -68,7 +68,16 @@ type roleCache struct {
 // (fail closed): authorization must never proceed against an empty or
 // partial cache.
 func NewRoleCache(ctx context.Context, db database.Service, redisClient *redis.Client, ttl time.Duration) (RoleCache, error) {
-	return loadCache(ctx, db, redisClient, ttl)
+	// A nil *redis.Client boxed directly into the roleCacheStore interface
+	// would produce a non-nil interface value (typed nil), so the `store ==
+	// nil` checks in tryLoadFromRedis/writeThrough wouldn't catch it and
+	// they'd panic calling Get/Set on a nil client. Normalize to a true nil
+	// interface here instead.
+	var store roleCacheStore
+	if redisClient != nil {
+		store = redisClient
+	}
+	return loadCache(ctx, db, store, ttl)
 }
 
 // loadCache builds a *roleCache, trying a warm Redis snapshot first and

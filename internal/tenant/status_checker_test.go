@@ -3,6 +3,8 @@ package tenant
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -152,6 +154,50 @@ func TestMemoryStatusCache_CachesWithinTTL(t *testing.T) {
 
 	if repo.calls != 1 {
 		t.Errorf("repo.GetByID called %d times within TTL, want 1", repo.calls)
+	}
+}
+
+// slowCountingRepository is safe for concurrent GetByID calls and holds
+// each one open briefly, widening the window for concurrent cache misses
+// to overlap so TestMemoryStatusCache_CoalescesConcurrentMisses can
+// reliably exercise the singleflight path.
+type slowCountingRepository struct {
+	tenant *Tenant
+	calls  int64
+}
+
+func (f *slowCountingRepository) GetByID(ctx context.Context, id uuid.UUID) (*Tenant, error) {
+	atomic.AddInt64(&f.calls, 1)
+	time.Sleep(10 * time.Millisecond)
+	return f.tenant, nil
+}
+
+func (f *slowCountingRepository) GetBySlug(ctx context.Context, slug string) (*Tenant, error) {
+	return f.tenant, nil
+}
+
+func TestMemoryStatusCache_CoalescesConcurrentMisses(t *testing.T) {
+	t.Parallel()
+
+	tenantID := uuid.New()
+	repo := &slowCountingRepository{tenant: &Tenant{ID: tenantID, IsActive: true, RateLimitPerMinute: 60, RateLimitPerHour: 1000}}
+	cache := NewStatusCache(repo, StatusCacheTTL)
+
+	const concurrency = 20
+	var wg sync.WaitGroup
+	wg.Add(concurrency)
+	for i := 0; i < concurrency; i++ {
+		go func() {
+			defer wg.Done()
+			if _, err := cache.IsActive(context.Background(), tenantID); err != nil {
+				t.Errorf("IsActive() unexpected error: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := atomic.LoadInt64(&repo.calls); got != 1 {
+		t.Errorf("repo.GetByID called %d times for %d concurrent misses, want 1", got, concurrency)
 	}
 }
 

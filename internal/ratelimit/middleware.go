@@ -14,7 +14,7 @@ import (
 )
 
 // LimitsProvider resolves a tenant's configured per-minute/per-hour limits.
-// Declared here (the consumer) per the DI convention; *tenant.redisStatusCache
+// Declared here (the consumer) per the DI convention; *tenant.memoryStatusCache
 // satisfies it structurally.
 type LimitsProvider interface {
 	RateLimits(ctx context.Context, tenantID uuid.UUID) (tenant.RateLimits, error)

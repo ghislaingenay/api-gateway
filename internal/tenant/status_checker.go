@@ -10,6 +10,7 @@ import (
 	"api-gateway/internal/logger"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/singleflight"
 )
 
 // StatusCacheTTL bounds how long a cached tenant entry (active status and
@@ -60,6 +61,11 @@ type memoryStatusCache struct {
 
 	mu   sync.RWMutex
 	data map[uuid.UUID]entry
+
+	// group collapses concurrent loads for the same tenant into a single
+	// PostgreSQL query, so a burst of requests arriving right as an entry
+	// expires doesn't turn into a burst of duplicate DB reads.
+	group singleflight.Group
 }
 
 // NewStatusCache returns a StatusChecker/RateLimitProvider backed by an
@@ -100,7 +106,9 @@ func (c *memoryStatusCache) RateLimits(ctx context.Context, tenantID uuid.UUID) 
 }
 
 // get returns the cached entry for tenantID, refetching from PostgreSQL
-// when absent or past its TTL.
+// when absent or past its TTL. Concurrent misses/expiries for the same
+// tenant share one in-flight fetch via c.group rather than each issuing
+// their own query.
 func (c *memoryStatusCache) get(ctx context.Context, tenantID uuid.UUID) (entry, error) {
 	c.mu.RLock()
 	e, ok := c.data[tenantID]
@@ -109,17 +117,33 @@ func (c *memoryStatusCache) get(ctx context.Context, tenantID uuid.UUID) (entry,
 		return e, nil
 	}
 
+	// Note: the first caller to arrive owns the context used for the
+	// shared fetch — if it's canceled, every other caller waiting on this
+	// key is canceled with it. Acceptable here since the load is a single
+	// fast primary-key read and callers are all requesting the same data.
+	v, err, _ := c.group.Do(tenantID.String(), func() (interface{}, error) {
+		return c.load(ctx, tenantID)
+	})
+	if err != nil {
+		return entry{}, err
+	}
+	return v.(entry), nil
+}
+
+// load fetches tenantID from PostgreSQL and populates the cache, called at
+// most once per outstanding miss/expiry via c.group.
+func (c *memoryStatusCache) load(ctx context.Context, tenantID uuid.UUID) (entry, error) {
 	t, err := c.repo.GetByID(ctx, tenantID)
 	if err != nil {
 		if errors.Is(err, ErrTenantNotFound) {
-			e = entry{active: false, expiresAt: time.Now().Add(c.ttl)}
+			e := entry{active: false, expiresAt: time.Now().Add(c.ttl)}
 			c.set(tenantID, e)
 			return e, nil
 		}
 		return entry{}, fmt.Errorf("load tenant for status check: %w", err)
 	}
 
-	e = entry{
+	e := entry{
 		active:    t.IsActive && t.DeletedAt == nil,
 		limits:    RateLimits{PerMinute: t.RateLimitPerMinute, PerHour: t.RateLimitPerHour},
 		expiresAt: time.Now().Add(c.ttl),
