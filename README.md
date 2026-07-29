@@ -107,6 +107,32 @@ running locally.
   `migrate`, `orders-service`, and `jwks-service` services via
   `command:` overrides.
 
+## Load Testing
+
+A [k6](https://k6.io/docs/get-started/installation/) script at
+[`loadtest/gateway-load-test.js`](loadtest/gateway-load-test.js) load-tests
+the running gateway (auth, cache, rate limiting, and the proxied
+`/api/orders` routes) with a ramping profile up to 1000 virtual users.
+
+**Run it manually, locally:**
+
+```bash
+docker compose up --build -d
+go run ./cmd/seed   # if you haven't already seeded a tenant/user
+k6 run loadtest/gateway-load-test.js
+```
+
+Override the target or credentials with `-e`, e.g.
+`k6 run -e BASE_URL=... -e LOGIN_EMAIL=... loadtest/gateway-load-test.js`.
+
+**Run it in GitHub Actions:** add the `load-test` label to a pull request.
+This triggers [`.github/workflows/load-test.yml`](.github/workflows/load-test.yml),
+which spins up the full compose stack, seeds it, and runs the same script
+against it. While the label is present, it re-triggers automatically on
+every new push to the PR; removing the label cancels an in-progress run.
+If the `load-test` label doesn't exist yet in this repo, create it first
+under the repo's Issues/PRs → Labels settings.
+
 ## MakeFile
 
 Run build make command with tests

@@ -1,0 +1,64 @@
+name: load-test
+
+on:
+  pull_request:
+    types: [labeled, unlabeled, synchronize]
+
+# Removing the load-test label, or pushing new commits while it's absent,
+# fires a new run in the same group, which cancels a still-running load
+# test via cancel-in-progress below (the new run's job doesn't itself do
+# anything unless the "if" condition on the job matches).
+concurrency:
+  group: load-test-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  k6:
+    if: |
+      (github.event.action == 'labeled' && github.event.label.name == 'load-test') ||
+      (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'load-test'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22.x'
+
+      - name: Start stack
+        run: |
+          cp .env.example .env
+          docker compose up --build -d
+          timeout 60 bash -c 'until curl -sf http://localhost:8080/health; do sleep 2; done'
+
+      - name: Seed tenant/user
+        run: go run ./cmd/seed
+        env:
+          APP_ENV: development
+          DB_HOST: localhost
+          DB_PORT: "5433"
+          DB_DATABASE: gateway
+          DB_USER: gateway
+          DB_PASSWORD: gateway
+          DB_SSL_MODE: disable
+          DB_SCHEMA: public
+
+      - name: Run k6 load test
+        # Runs k6 directly via `docker run --network host` instead of
+        # grafana/k6-action: the action runs k6 in its own container on
+        # a separate Docker network, so it can't reach the compose
+        # stack's published localhost ports. --network host shares the
+        # runner's network namespace, same as the `curl` healthcheck above.
+        run: |
+          docker run --rm --network host \
+            -e BASE_URL=http://localhost:8080 \
+            -v "$PWD/loadtest:/loadtest" \
+            grafana/k6 run /loadtest/gateway-load-test.js
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
