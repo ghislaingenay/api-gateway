@@ -161,6 +161,8 @@ func (f *fakeRoleCache) GetRoleByID(id uuid.UUID) (*rbac.Role, bool) {
 func (f *fakeRoleCache) All() []rbac.Role                  { return f.roles }
 func (f *fakeRoleCache) AllPermissions() []rbac.Permission { return nil }
 
+func (f *fakeRoleCache) Refresh(ctx context.Context) error { return nil }
+
 type fakeSigner struct{ signed int }
 
 func (f *fakeSigner) Sign(claims CustomClaims) (string, error) {

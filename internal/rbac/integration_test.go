@@ -11,10 +11,19 @@ import (
 	"api-gateway/internal/rbac"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/redis/go-redis/v9"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
+
+// unreachableRedisClient points at a closed local port so Get/Set calls
+// fail fast with a connection error, driving rbac.NewRoleCache down its
+// PostgreSQL fallback path — exactly what these integration tests intend
+// to exercise, without adding a Redis testcontainer dependency.
+func unreachableRedisClient() *redis.Client {
+	return redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+}
 
 // testDBService is a minimal database.Service backed directly by a *sql.DB,
 // used to point rbac.NewRoleCache at an ephemeral testcontainers database
@@ -77,7 +86,7 @@ func mustStartMigratedPostgres(t *testing.T) database.Service {
 func TestNewRoleCache_LoadsSeededRolesAndPermissions(t *testing.T) {
 	dbService := mustStartMigratedPostgres(t)
 
-	cache, err := rbac.NewRoleCache(context.Background(), dbService)
+	cache, err := rbac.NewRoleCache(context.Background(), dbService, unreachableRedisClient(), rbac.RoleCacheTTL)
 	if err != nil {
 		t.Fatalf("NewRoleCache() error = %v", err)
 	}
@@ -140,7 +149,7 @@ func TestNewRoleCache_MigrationIsIdempotent(t *testing.T) {
 		t.Fatalf("re-running database.Migrate() error = %v", err)
 	}
 
-	cache, err := rbac.NewRoleCache(context.Background(), dbService)
+	cache, err := rbac.NewRoleCache(context.Background(), dbService, unreachableRedisClient(), rbac.RoleCacheTTL)
 	if err != nil {
 		t.Fatalf("NewRoleCache() error = %v", err)
 	}
@@ -150,5 +159,28 @@ func TestNewRoleCache_MigrationIsIdempotent(t *testing.T) {
 	}
 	if len(cache.AllPermissions()) != 22 {
 		t.Errorf("len(AllPermissions()) = %d after re-migration, want 22 (no duplicates)", len(cache.AllPermissions()))
+	}
+}
+
+func TestRoleCache_Refresh_ReloadsFromPostgres(t *testing.T) {
+	dbService := mustStartMigratedPostgres(t)
+
+	cache, err := rbac.NewRoleCache(context.Background(), dbService, unreachableRedisClient(), rbac.RoleCacheTTL)
+	if err != nil {
+		t.Fatalf("NewRoleCache() error = %v", err)
+	}
+
+	if err := cache.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	if len(cache.All()) != 3 {
+		t.Errorf("len(All()) after Refresh() = %d, want 3 (admin, manager, viewer)", len(cache.All()))
+	}
+	if len(cache.AllPermissions()) != 22 {
+		t.Errorf("len(AllPermissions()) after Refresh() = %d, want 22 (seeded permission matrix)", len(cache.AllPermissions()))
+	}
+	if _, ok := cache.GetRole("admin"); !ok {
+		t.Error("GetRole(admin) not found after Refresh()")
 	}
 }
