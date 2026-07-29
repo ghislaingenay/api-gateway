@@ -128,11 +128,10 @@ Override the target or credentials with `-e`, e.g.
 **Run it in GitHub Actions:** add the `load-test` label to a pull request.
 This triggers [`.github/workflows/load-test.yml`](.github/workflows/load-test.yml),
 which spins up the full compose stack, seeds it, and runs the same script
-against it. Re-add the label to re-trigger a run on new commits (GitHub
-only fires on the label being added, not on every push while it's
-already present). Removing the label cancels an in-progress run. If the
-`load-test` label doesn't exist yet in this repo, create it first under
-the repo's Issues/PRs → Labels settings.
+against it. While the label is present, it re-triggers automatically on
+every new push to the PR; removing the label cancels an in-progress run.
+If the `load-test` label doesn't exist yet in this repo, create it first
+under the repo's Issues/PRs → Labels settings.
 
 ## MakeFile
 
