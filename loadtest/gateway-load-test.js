@@ -25,6 +25,13 @@ const LOGIN_EMAIL = __ENV.LOGIN_EMAIL || 'viewer@seed.test';
 const LOGIN_PASSWORD = __ENV.LOGIN_PASSWORD || 'password123';
 const TENANT_SLUG = __ENV.TENANT_SLUG || 'seed-tenant';
 
+// By default k6's http_req_failed metric marks any non-2xx/3xx response as
+// a failure, regardless of the checks below. 404 and 429 are legitimate,
+// expected outcomes here (unknown order ID / gateway rate limiting under
+// load), so they're excluded from http_req_failed too — otherwise the
+// http_req_failed threshold trips on correct gateway behavior.
+http.setResponseCallback(http.expectedStatuses(200, 201, 404, 429));
+
 export const options = {
   stages: [
     { duration: '30s', target: 100 }, // ramp up
