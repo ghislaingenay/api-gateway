@@ -85,7 +85,8 @@ func LoadRoutesConfig() ([]RouteEntry, error) {
 		return nil, fmt.Errorf("parse routes config %q: %w", path, err)
 	}
 
-	for _, route := range routes {
+	for i := range routes {
+		route := &routes[i]
 		if route.CacheTTLSeconds < 0 {
 			return nil, fmt.Errorf("route %s %s: cache_ttl_seconds must not be negative, got %d", route.Method, route.Path, route.CacheTTLSeconds)
 		}

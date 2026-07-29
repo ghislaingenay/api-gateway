@@ -23,6 +23,7 @@ INSERT INTO roles (name, display_name, description, permissions, is_system_role)
         "billing:read", "billing:update", "billing:delete",
         "settings:read", "settings:update",
         "roles:read", "roles:assign",
+        "permissions:read",
         "audit_logs:read"
     ]'::jsonb,
     true

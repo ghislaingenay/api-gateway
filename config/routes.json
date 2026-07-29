@@ -2,7 +2,7 @@
   {
     "path": "/api/orders/*",
     "method": "GET",
-    "upstream": "http://localhost:8081",
+    "upstream": "$env:ORDERS_SERVICE_UPSTREAM",
     "auth_required": true,
     "permissions_required": ["orders:read"],
     "required_params": [
@@ -12,7 +12,7 @@
   {
     "path": "/api/orders",
     "method": "POST",
-    "upstream": "http://localhost:8081",
+    "upstream": "$env:ORDERS_SERVICE_UPSTREAM",
     "auth_required": true,
     "permissions_required": ["orders:create"],
     "body_required": true,

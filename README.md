@@ -51,15 +51,21 @@ Everything needed to run the gateway locally is in `docker-compose.yml` —
 no external paid services required.
 
 ```bash
+cp .env.example .env
 docker compose up --build
 ```
+
+`.env.example` ships with fake local-only Postgres/Redis credentials and a
+dedicated JWT signing keypair generated just for local dev, so the stack
+works out of the box.
 
 This starts, in dependency order:
 
 1. **postgres** (`localhost:5433`) and **redis** (`localhost:6380`) — health-checked before anything else starts.
 2. **migrate** — a one-shot job (`cmd/migrate`) that applies all pending database migrations, then exits. The gateway only starts once this completes successfully.
 3. **gateway** (`localhost:8080`) — the API gateway itself.
-4. **orders-service** (`localhost:8081`) and **inventory-service** (`localhost:8082`) — minimal mock downstream services (`cmd/mockorders`, `cmd/mockinventory`) that `config/routes.json` proxies `/api/orders/*` and `/api/inventory/*` to, so you can see the gateway's full request flow (auth → validation → rate limit → cache → resilient proxy) end-to-end.
+4. **jwks-service** (`localhost:8083`) — a local JWKS publisher (`cmd/mockjwks`) so the gateway's JWKS-backed key store has something to fetch from.
+5. **orders-service** (`localhost:8081`) — a minimal mock downstream service (`cmd/mockorders`) that `config/routes.json` proxies `/api/orders/*` to, so you can see the gateway's full request flow (auth → validation → rate limit → cache → resilient proxy) end-to-end.
 
 Then seed a tenant and two test users (`admin@seed.test` / `viewer@seed.test`, password `password123`) against the compose Postgres:
 
@@ -96,9 +102,9 @@ running locally.
 
 - `Dockerfile` builds the production gateway image (`cmd/api` only).
 - `Dockerfile.dev` builds a local-development-only image bundling
-  `cmd/migrate`, `cmd/mockorders`, and `cmd/mockinventory` — never shipped
+  `cmd/migrate`, `cmd/mockorders`, and `cmd/mockjwks` — never shipped
   to production. Compose builds it once and reuses it across the
-  `migrate`, `orders-service`, and `inventory-service` services via
+  `migrate`, `orders-service`, and `jwks-service` services via
   `command:` overrides.
 
 ## MakeFile
