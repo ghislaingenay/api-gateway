@@ -130,8 +130,9 @@ This triggers [`.github/workflows/load-test.yml`](.github/workflows/load-test.ym
 which spins up the full compose stack, seeds it, and runs the same script
 against it. Re-add the label to re-trigger a run on new commits (GitHub
 only fires on the label being added, not on every push while it's
-already present). If the `load-test` label doesn't exist yet in this
-repo, create it first under the repo's Issues/PRs → Labels settings.
+already present). Removing the label cancels an in-progress run. If the
+`load-test` label doesn't exist yet in this repo, create it first under
+the repo's Issues/PRs → Labels settings.
 
 ## MakeFile
 
