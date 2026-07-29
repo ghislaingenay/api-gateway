@@ -17,6 +17,14 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
+// seededRoleCount is the number of rows inserted by
+// 00002_create_roles.sql (admin, manager, viewer).
+const seededRoleCount = 3
+
+// seededPermissionCount is the number of rows inserted by
+// 00005_create_permissions.sql (kept in sync with that migration).
+const seededPermissionCount = 19
+
 // unreachableRedisClient points at a closed local port so Get/Set calls
 // fail fast with a connection error, driving rbac.NewRoleCache down its
 // PostgreSQL fallback path — exactly what these integration tests intend
@@ -92,8 +100,8 @@ func TestNewRoleCache_LoadsSeededRolesAndPermissions(t *testing.T) {
 	}
 
 	roles := cache.All()
-	if len(roles) != 3 {
-		t.Fatalf("len(All()) = %d, want 3 (admin, manager, viewer)", len(roles))
+	if len(roles) != seededRoleCount {
+		t.Fatalf("len(All()) = %d, want %d (admin, manager, viewer)", len(roles), seededRoleCount)
 	}
 
 	for _, name := range []string{"admin", "manager", "viewer"} {
@@ -121,8 +129,8 @@ func TestNewRoleCache_LoadsSeededRolesAndPermissions(t *testing.T) {
 	}
 
 	permissions := cache.AllPermissions()
-	if len(permissions) != 22 {
-		t.Fatalf("len(AllPermissions()) = %d, want 22 (seeded permission matrix)", len(permissions))
+	if len(permissions) != seededPermissionCount {
+		t.Fatalf("len(AllPermissions()) = %d, want %d (seeded permission matrix)", len(permissions), seededPermissionCount)
 	}
 
 	found := false
@@ -154,11 +162,11 @@ func TestNewRoleCache_MigrationIsIdempotent(t *testing.T) {
 		t.Fatalf("NewRoleCache() error = %v", err)
 	}
 
-	if len(cache.All()) != 3 {
-		t.Errorf("len(All()) = %d after re-migration, want 3 (no duplicates)", len(cache.All()))
+	if len(cache.All()) != seededRoleCount {
+		t.Errorf("len(All()) = %d after re-migration, want %d (no duplicates)", len(cache.All()), seededRoleCount)
 	}
-	if len(cache.AllPermissions()) != 22 {
-		t.Errorf("len(AllPermissions()) = %d after re-migration, want 22 (no duplicates)", len(cache.AllPermissions()))
+	if len(cache.AllPermissions()) != seededPermissionCount {
+		t.Errorf("len(AllPermissions()) = %d after re-migration, want %d (no duplicates)", len(cache.AllPermissions()), seededPermissionCount)
 	}
 }
 
@@ -174,11 +182,11 @@ func TestRoleCache_Refresh_ReloadsFromPostgres(t *testing.T) {
 		t.Fatalf("Refresh() error = %v", err)
 	}
 
-	if len(cache.All()) != 3 {
-		t.Errorf("len(All()) after Refresh() = %d, want 3 (admin, manager, viewer)", len(cache.All()))
+	if len(cache.All()) != seededRoleCount {
+		t.Errorf("len(All()) after Refresh() = %d, want %d (admin, manager, viewer)", len(cache.All()), seededRoleCount)
 	}
-	if len(cache.AllPermissions()) != 22 {
-		t.Errorf("len(AllPermissions()) after Refresh() = %d, want 22 (seeded permission matrix)", len(cache.AllPermissions()))
+	if len(cache.AllPermissions()) != seededPermissionCount {
+		t.Errorf("len(AllPermissions()) after Refresh() = %d, want %d (seeded permission matrix)", len(cache.AllPermissions()), seededPermissionCount)
 	}
 	if _, ok := cache.GetRole("admin"); !ok {
 		t.Error("GetRole(admin) not found after Refresh()")
