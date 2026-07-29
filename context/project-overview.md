@@ -324,7 +324,6 @@ INSERT INTO roles (name, display_name, description, permissions, is_system_role)
         "settings:read", "settings:update",
         "roles:read", "roles:assign",
         "audit_logs:read",
-        "api_keys:create", "api_keys:read", "api_keys:revoke"
     ]'::jsonb,
     true
 ),
@@ -338,7 +337,6 @@ INSERT INTO roles (name, display_name, description, permissions, is_system_role)
         "settings:read",
         "roles:read", "roles:assign",
         "audit_logs:read",
-        "api_keys:create", "api_keys:read", "api_keys:revoke"
     ]'::jsonb,
     true
 ),
@@ -404,10 +402,6 @@ INSERT INTO permissions (name, resource, action, description) VALUES
 -- Audit logs
 ('audit_logs:read', 'audit_logs', 'read', 'View audit logs and activity history'),
 
--- API Keys
-('api_keys:create', 'api_keys', 'create', 'Generate new API keys'),
-('api_keys:read', 'api_keys', 'read', 'View API keys'),
-('api_keys:revoke', 'api_keys', 'revoke', 'Revoke API keys');
 ```
 
 **Tenants Table**
@@ -785,10 +779,6 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 | `roles:assign`          | ✅    | ✅      | ❌     | Assign roles to users                |
 | **Audit & Compliance**  |
 | `audit_logs:read`       | ✅    | ✅      | ✅     | View audit logs, activity history    |
-| **API Keys**            |
-| `api_keys:create`       | ✅    | ✅      | ❌     | Generate API keys for integrations   |
-| `api_keys:read`         | ✅    | ✅      | ✅     | View existing API keys               |
-| `api_keys:revoke`       | ✅    | ✅      | ❌     | Revoke/delete API keys               |
 
 **Role Definitions:**
 
@@ -832,7 +822,6 @@ Manager (Operational Access)
   ├─ All Viewer permissions
   ├─ users:create, users:update
   ├─ roles:assign
-  ├─ api_keys:create, api_keys:revoke
   └─ settings:read (but not update)
 
 Viewer (Read-Only Access)
@@ -841,7 +830,6 @@ Viewer (Read-Only Access)
   ├─ settings:read
   ├─ roles:read
   ├─ audit_logs:read
-  └─ api_keys:read
 ```
 
 **Redis Keys**

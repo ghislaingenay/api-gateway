@@ -45,6 +45,11 @@ services:
       DB_USER: gateway
       DB_PASSWORD: gateway
       DB_SSL_MODE: disable
+      # Explicitly overridden (not just left to .env.example's default) so
+      # a real .env with cloud DB_PG_CHANNELBINDING=require (e.g. Neon)
+      # can't leak through and break auth against the plain local postgres
+      # container, which doesn't support SCRAM-SHA-256-PLUS.
+      DB_PG_CHANNELBINDING: disable
       DB_SCHEMA: public
     depends_on:
       postgres:
@@ -69,6 +74,10 @@ services:
       # Overrides .env's localhost value with the in-compose service name
       # so the gateway container can reach jwks-service below.
       JWT_JWKS_URL: http://jwks-service:8083/.well-known/jwks.json
+      # Overrides .env's localhost value so config/routes.json's
+      # "$env:ORDERS_SERVICE_UPSTREAM" resolves to the orders-service
+      # container instead of the gateway container itself.
+      ORDERS_SERVICE_UPSTREAM: http://orders-service:8081
     ports:
       - "8080:8080"
     depends_on:
@@ -92,19 +101,6 @@ services:
       PORT: "8081"
     ports:
       - "8081:8081"
-
-  # Mock downstream service matching config/routes.json's inventory-service
-  # upstream (http://inventory-service:8082).
-  inventory-service:
-    image: api-gateway-devtools:local
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    command: ["mockinventory"]
-    environment:
-      PORT: "8082"
-    ports:
-      - "8082:8082"
 
   # Local JWKS publisher (no real auth/identity server exists yet): serves
   # the public half of .env's JWT_SIGNING_KID/JWT_SIGNING_PRIVATE_KEY so

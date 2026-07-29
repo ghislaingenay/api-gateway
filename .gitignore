@@ -25,6 +25,7 @@ tmp/
 # .env file
 .env
 .env.*
+!.env.example
 
 # Project build
 main

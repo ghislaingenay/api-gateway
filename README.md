@@ -51,15 +51,21 @@ Everything needed to run the gateway locally is in `docker-compose.yml` —
 no external paid services required.
 
 ```bash
+cp .env.example .env
 docker compose up --build
 ```
+
+`.env.example` ships with fake local-only Postgres/Redis credentials and a
+dedicated JWT signing keypair generated just for local dev, so the stack
+works out of the box.
 
 This starts, in dependency order:
 
 1. **postgres** (`localhost:5433`) and **redis** (`localhost:6380`) — health-checked before anything else starts.
 2. **migrate** — a one-shot job (`cmd/migrate`) that applies all pending database migrations, then exits. The gateway only starts once this completes successfully.
 3. **gateway** (`localhost:8080`) — the API gateway itself.
-4. **orders-service** (`localhost:8081`) and **inventory-service** (`localhost:8082`) — minimal mock downstream services (`cmd/mockorders`, `cmd/mockinventory`) that `config/routes.json` proxies `/api/orders/*` and `/api/inventory/*` to, so you can see the gateway's full request flow (auth → validation → rate limit → cache → resilient proxy) end-to-end.
+4. **jwks-service** (`localhost:8083`) — a local JWKS publisher (`cmd/mockjwks`) so the gateway's JWKS-backed key store has something to fetch from.
+5. **orders-service** (`localhost:8081`) — a minimal mock downstream service (`cmd/mockorders`) that `config/routes.json` proxies `/api/orders/*` to, so you can see the gateway's full request flow (auth → validation → rate limit → cache → resilient proxy) end-to-end.
 
 Then seed a tenant and two test users (`admin@seed.test` / `viewer@seed.test`, password `password123`) against the compose Postgres:
 
@@ -96,9 +102,9 @@ running locally.
 
 - `Dockerfile` builds the production gateway image (`cmd/api` only).
 - `Dockerfile.dev` builds a local-development-only image bundling
-  `cmd/migrate`, `cmd/mockorders`, and `cmd/mockinventory` — never shipped
+  `cmd/migrate`, `cmd/mockorders`, and `cmd/mockjwks` — never shipped
   to production. Compose builds it once and reuses it across the
-  `migrate`, `orders-service`, and `inventory-service` services via
+  `migrate`, `orders-service`, and `jwks-service` services via
   `command:` overrides.
 
 ## MakeFile
@@ -164,5 +170,24 @@ and key trade-offs:
 - [TD-008: Resilience (Retry & Timeout)](context/technical-designs/TD-008-resilience-retry-timeout.md)
 - [TD-009: Observability & Health Checks](context/technical-designs/TD-009-observability-health-checks.md)
 - [TD-010: API Documentation & Dev Environment](context/technical-designs/TD-010-api-docs-dev-environment.md)
+- [TD-011: JWKS Key Rotation](context/technical-designs/TD-011-jwks-key-rotation.md)
 
 The full feature index is at [context/features/README.md](context/features/README.md).
+
+## Roadmap
+
+Planned next steps:
+
+- **Bot detection** — identify and rate-limit/block automated/bot traffic hitting the gateway, beyond today's per-tenant rate limiting.
+- **Hot reload on file change** — reload the running gateway (config/routes, and ideally code) when a watched file changes, without a manual restart.
+- **Identity provider integration** — replace the local mock JWKS publisher (`cmd/mockjwks`) with a real identity provider (e.g. Auth0, Keycloak, Cognito) as the source of truth for JWT signing/verification.
+- **Cloud deployment** — a production deployment target (container registry, orchestration, managed Postgres/Redis, secrets management) beyond the current local-only `docker-compose.yml`.
+
+## Contributing
+
+1. Fork the repo and create a branch off `master` for your change.
+2. Follow the existing patterns: business logic in `internal/`, shared config loading in `config/`, one `cmd/*` binary per entrypoint.
+3. Add or update tests alongside your change (`make test`, or `make itest` for the database integration suite) and make sure `go vet ./...` is clean.
+4. If your change affects the local dev stack, verify it end-to-end against `docker-compose.yml` (see [Local Development](#local-development)) before opening a PR.
+5. For anything beyond a small fix, add or update the relevant technical design doc under `context/technical-designs/` and feature entry under `context/features/` — see [Design Decisions](#design-decisions) for the existing index.
+6. Open a PR against `master` with a clear description of the change and why it's needed.

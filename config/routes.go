@@ -1,7 +1,6 @@
 package config
 
 import (
-	"api-gateway/internal/logger"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -52,20 +51,21 @@ type RouteEntry struct {
 	RequiredParams []RequiredParamEntry `json:"required_params"`
 }
 
-// Upstream follows $env:ENV_NAME syntax to override the upstream with an environment variable, if present, default to localhost
-func overrideUpstreamWithEnv(upstream string) string {
+// Upstream follows $env:ENV_NAME syntax to override the upstream with an
+// environment variable. Returns an error if the referenced variable is
+// unset, rather than substituting a scheme-less "localhost" that would
+// otherwise fail URL parsing on every proxied request at runtime.
+func overrideUpstreamWithEnv(upstream string) (string, error) {
 	if len(upstream) > 5 && upstream[:5] == "$env:" {
 		envVar := upstream[5:]
-		if envValue := os.Getenv(envVar); envValue != "" {
-			return envValue
-		} else {
-			logger.Default().Warn("Missing env for upstream %s", envVar, false)
-			return "localhost"
+		envValue := os.Getenv(envVar)
+		if envValue == "" {
+			return "", fmt.Errorf("%w: %s", ErrMissingUpstreamEnv, envVar)
 		}
+		return envValue, nil
 	}
-	return upstream
+	return upstream, nil
 }
-
 
 // LoadRoutesConfig reads the static route table from the JSON file at
 // GATEWAY_ROUTES_FILE (default "config/routes.json").
@@ -85,7 +85,8 @@ func LoadRoutesConfig() ([]RouteEntry, error) {
 		return nil, fmt.Errorf("parse routes config %q: %w", path, err)
 	}
 
-	for _, route := range routes {
+	for i := range routes {
+		route := &routes[i]
 		if route.CacheTTLSeconds < 0 {
 			return nil, fmt.Errorf("route %s %s: cache_ttl_seconds must not be negative, got %d", route.Method, route.Path, route.CacheTTLSeconds)
 		}
@@ -101,7 +102,11 @@ func LoadRoutesConfig() ([]RouteEntry, error) {
 			}
 		}
 
-		route.Upstream = overrideUpstreamWithEnv(route.Upstream)
+		upstream, err := overrideUpstreamWithEnv(route.Upstream)
+		if err != nil {
+			return nil, fmt.Errorf("route %s %s: %w", route.Method, route.Path, err)
+		}
+		route.Upstream = upstream
 	}
 
 	return routes, nil

@@ -43,11 +43,6 @@ INSERT INTO permissions (name, resource, action, description) VALUES
 -- Audit logs
 ('audit_logs:read', 'audit_logs', 'read', 'View audit logs and activity history'),
 
--- API Keys
-('api_keys:create', 'api_keys', 'create', 'Generate new API keys'),
-('api_keys:read', 'api_keys', 'read', 'View API keys'),
-('api_keys:revoke', 'api_keys', 'revoke', 'Revoke API keys'),
-
 -- Orders
 ('orders:read', 'orders', 'read', 'View orders'),
 ('orders:create', 'orders', 'create', 'Create new orders');

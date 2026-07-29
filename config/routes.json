@@ -2,7 +2,7 @@
   {
     "path": "/api/orders/*",
     "method": "GET",
-    "upstream": "http://localhost:8081",
+    "upstream": "$env:ORDERS_SERVICE_UPSTREAM",
     "auth_required": true,
     "permissions_required": ["orders:read"],
     "required_params": [
@@ -12,23 +12,13 @@
   {
     "path": "/api/orders",
     "method": "POST",
-    "upstream": "http://localhost:8081",
+    "upstream": "$env:ORDERS_SERVICE_UPSTREAM",
     "auth_required": true,
     "permissions_required": ["orders:create"],
     "body_required": true,
     "body_fields": [
       { "field": "customer_email", "rule": "required,email" },
       { "field": "quantity", "rule": "required,gt=0" }
-    ]
-  },
-  {
-    "path": "/api/inventory/*",
-    "method": "GET",
-    "upstream": "http://localhost:8082",
-    "auth_required": true,
-    "permissions_required": [],
-    "required_params": [
-      { "name": "id", "in": "path", "rule": "required,uuid4" }
     ]
   }
 ]

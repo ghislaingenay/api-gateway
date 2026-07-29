@@ -23,8 +23,8 @@ INSERT INTO roles (name, display_name, description, permissions, is_system_role)
         "billing:read", "billing:update", "billing:delete",
         "settings:read", "settings:update",
         "roles:read", "roles:assign",
-        "audit_logs:read",
-        "api_keys:create", "api_keys:read", "api_keys:revoke"
+        "permissions:read",
+        "audit_logs:read"
     ]'::jsonb,
     true
 ),
@@ -37,8 +37,7 @@ INSERT INTO roles (name, display_name, description, permissions, is_system_role)
         "tenants:read",
         "settings:read",
         "roles:read", "roles:assign",
-        "audit_logs:read",
-        "api_keys:create", "api_keys:read", "api_keys:revoke"
+        "audit_logs:read"
     ]'::jsonb,
     true
 ),
