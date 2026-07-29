@@ -2,30 +2,23 @@ package tenant
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"api-gateway/internal/logger"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/singleflight"
 )
 
-// StatusCacheTTL bounds how long a cached tenant active-status entry may be
-// served before falling back to the database. It trades a small staleness
-// window (a just-deactivated tenant can still be routed for up to this long)
-// for keeping the active-status check off the request's DB path.
+// StatusCacheTTL bounds how long a cached tenant entry (active status and
+// rate limits together) may be served before the next read refetches it
+// from PostgreSQL. Tenant status/limits change rarely, so this trades a
+// small staleness window for keeping both off the request's hot path
+// entirely, rather than round-tripping to Redis on every request.
 const StatusCacheTTL = 30 * time.Second
-
-const statusCacheKeyPrefix = "tenant:status:"
-const limitsCacheKeyPrefix = "tenant:ratelimits:"
-
-const (
-	statusActive   = "1"
-	statusInactive = "0"
-)
 
 // StatusChecker reports whether a tenant is currently active (not disabled,
 // not soft-deleted).
@@ -45,77 +38,62 @@ type RateLimitProvider interface {
 	RateLimits(ctx context.Context, tenantID uuid.UUID) (RateLimits, error)
 }
 
-// statusCacheStore is the subset of *redis.Client the status cache needs,
-// sized to its two calls so tests can substitute a fake without a live
-// Redis instance.
-type statusCacheStore interface {
-	Get(ctx context.Context, key string) *redis.StringCmd
-	Set(ctx context.Context, key string, value interface{}, ttl time.Duration) *redis.StatusCmd
+// entry is the cached snapshot for one tenant: active status and rate
+// limits loaded together from a single PostgreSQL read, so IsActive and
+// RateLimits never trigger two separate loads for the same tenant.
+type entry struct {
+	active    bool
+	limits    RateLimits
+	expiresAt time.Time
 }
 
-type redisStatusCache struct {
-	repo  Repository
-	redis statusCacheStore
-	ttl   time.Duration
+// memoryStatusCache satisfies both StatusChecker and RateLimitProvider from
+// a process-local, per-tenant cache instead of a shared Redis cache. Going
+// to Redis for this put a network round trip (sometimes cross-region) on
+// every request for data that changes rarely; keeping the last-known value
+// in memory removes that round trip for the common case. The trade-off is
+// that each replica refetches independently on its own TTL rather than
+// sharing one warm cache, which is acceptable given how infrequently tenant
+// status/limits actually change.
+type memoryStatusCache struct {
+	repo Repository
+	ttl  time.Duration
+
+	mu   sync.RWMutex
+	data map[uuid.UUID]entry
+
+	// group collapses concurrent loads for the same tenant into a single
+	// PostgreSQL query, so a burst of requests arriving right as an entry
+	// expires doesn't turn into a burst of duplicate DB reads.
+	group singleflight.Group
 }
 
-// NewStatusCache returns a Redis-backed cache satisfying both StatusChecker
-// and RateLimitProvider, falling back to repo on a cache miss and
+// NewStatusCache returns a StatusChecker/RateLimitProvider backed by an
+// in-process cache, falling back to repo on a miss or expiry and
 // populating the cache with the result. A tenant that no longer exists is
-// treated as inactive rather than as an error, so gateway callers fail
-// closed (403) instead of erroring (500).
-func NewStatusCache(repo Repository, redisClient *redis.Client, ttl time.Duration) *redisStatusCache {
-	return &redisStatusCache{repo: repo, redis: redisClient, ttl: ttl}
+// cached as inactive rather than retried every call, and is reported as
+// inactive rather than as an error, so gateway callers fail closed (403)
+// instead of erroring (500).
+func NewStatusCache(repo Repository, ttl time.Duration) *memoryStatusCache {
+	return &memoryStatusCache{repo: repo, ttl: ttl, data: make(map[uuid.UUID]entry)}
 }
 
 // IsActive implements StatusChecker.
-func (c *redisStatusCache) IsActive(ctx context.Context, tenantID uuid.UUID) (bool, error) {
-	key := statusCacheKeyPrefix + tenantID.String()
-
-	if cached, err := c.redis.Get(ctx, key).Result(); err == nil {
-		return cached == statusActive, nil
-	}
-	// Cache miss or Redis error: best-effort cache, fall back to the
-	// database rather than failing the request when Redis is unavailable.
-
-	t, err := c.repo.GetByID(ctx, tenantID)
+func (c *memoryStatusCache) IsActive(ctx context.Context, tenantID uuid.UUID) (bool, error) {
+	e, err := c.get(ctx, tenantID)
 	if err != nil {
-		if errors.Is(err, ErrTenantNotFound) {
-			_ = c.redis.Set(ctx, key, statusInactive, c.ttl).Err()
-			return false, nil
-		}
-		return false, fmt.Errorf("load tenant for status check: %w", err)
+		return false, err
 	}
-
-	active := t.IsActive && t.DeletedAt == nil
-	value := statusInactive
-	if active {
-		value = statusActive
-	}
-	_ = c.redis.Set(ctx, key, value, c.ttl).Err()
-
-	return active, nil
+	return e.active, nil
 }
 
 // RateLimits implements RateLimitProvider.
-func (c *redisStatusCache) RateLimits(ctx context.Context, tenantID uuid.UUID) (RateLimits, error) {
-	key := limitsCacheKeyPrefix + tenantID.String()
-
-	if cached, err := c.redis.Get(ctx, key).Result(); err == nil {
-		var limits RateLimits
-		if jsonErr := json.Unmarshal([]byte(cached), &limits); jsonErr == nil {
-			return limits, nil
-		}
-		// Corrupt cache entry: fall through to the database.
-	}
-	// Cache miss or Redis error: best-effort cache, fall back to the
-	// database rather than failing the request when Redis is unavailable.
-
-	t, err := c.repo.GetByID(ctx, tenantID)
+func (c *memoryStatusCache) RateLimits(ctx context.Context, tenantID uuid.UUID) (RateLimits, error) {
+	e, err := c.get(ctx, tenantID)
 	if err != nil {
 		// Don't propagate a Postgres failure as a rate-limit error: doing so
 		// would make the caller fail open (skip rate limiting entirely) for
-		// a DB outage, not just a Redis outage. Log it and fall back to a
+		// a DB outage, not just a cache miss. Log it and fall back to a
 		// zero-value RateLimits instead, which callers resolve against their
 		// own configured defaults, so rate limiting still applies.
 		logger.FromContext(ctx).Warn("tenant: failed to load rate limits, falling back to defaults",
@@ -124,11 +102,58 @@ func (c *redisStatusCache) RateLimits(ctx context.Context, tenantID uuid.UUID) (
 		)
 		return RateLimits{}, nil
 	}
+	return e.limits, nil
+}
 
-	limits := RateLimits{PerMinute: t.RateLimitPerMinute, PerHour: t.RateLimitPerHour}
-	if encoded, jsonErr := json.Marshal(limits); jsonErr == nil {
-		_ = c.redis.Set(ctx, key, encoded, c.ttl).Err()
+// get returns the cached entry for tenantID, refetching from PostgreSQL
+// when absent or past its TTL. Concurrent misses/expiries for the same
+// tenant share one in-flight fetch via c.group rather than each issuing
+// their own query.
+func (c *memoryStatusCache) get(ctx context.Context, tenantID uuid.UUID) (entry, error) {
+	c.mu.RLock()
+	e, ok := c.data[tenantID]
+	c.mu.RUnlock()
+	if ok && time.Now().Before(e.expiresAt) {
+		return e, nil
 	}
 
-	return limits, nil
+	// Note: the first caller to arrive owns the context used for the
+	// shared fetch — if it's canceled, every other caller waiting on this
+	// key is canceled with it. Acceptable here since the load is a single
+	// fast primary-key read and callers are all requesting the same data.
+	v, err, _ := c.group.Do(tenantID.String(), func() (interface{}, error) {
+		return c.load(ctx, tenantID)
+	})
+	if err != nil {
+		return entry{}, err
+	}
+	return v.(entry), nil
+}
+
+// load fetches tenantID from PostgreSQL and populates the cache, called at
+// most once per outstanding miss/expiry via c.group.
+func (c *memoryStatusCache) load(ctx context.Context, tenantID uuid.UUID) (entry, error) {
+	t, err := c.repo.GetByID(ctx, tenantID)
+	if err != nil {
+		if errors.Is(err, ErrTenantNotFound) {
+			e := entry{active: false, expiresAt: time.Now().Add(c.ttl)}
+			c.set(tenantID, e)
+			return e, nil
+		}
+		return entry{}, fmt.Errorf("load tenant for status check: %w", err)
+	}
+
+	e := entry{
+		active:    t.IsActive && t.DeletedAt == nil,
+		limits:    RateLimits{PerMinute: t.RateLimitPerMinute, PerHour: t.RateLimitPerHour},
+		expiresAt: time.Now().Add(c.ttl),
+	}
+	c.set(tenantID, e)
+	return e, nil
+}
+
+func (c *memoryStatusCache) set(tenantID uuid.UUID, e entry) {
+	c.mu.Lock()
+	c.data[tenantID] = e
+	c.mu.Unlock()
 }

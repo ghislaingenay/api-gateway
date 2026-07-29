@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +35,8 @@ func (f *fakeRoleCache) GetRoleByID(id uuid.UUID) (*Role, bool) {
 
 func (f *fakeRoleCache) All() []Role                  { return f.roles }
 func (f *fakeRoleCache) AllPermissions() []Permission { return f.permissions }
+
+func (f *fakeRoleCache) Refresh(ctx context.Context) error { return nil }
 
 func TestRolesHandler(t *testing.T) {
 	tests := []struct {

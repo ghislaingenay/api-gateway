@@ -17,15 +17,15 @@ import (
 type fakeLimiter struct {
 	decisions map[Window]Decision
 	err       error
-	calls     []Window
+	calls     int
 }
 
-func (f *fakeLimiter) Allow(ctx context.Context, tenantID, userID uuid.UUID, window Window, limit int) (Decision, error) {
-	f.calls = append(f.calls, window)
+func (f *fakeLimiter) AllowBoth(ctx context.Context, tenantID, userID uuid.UUID, minuteLimit, hourLimit int) (Decision, Decision, error) {
+	f.calls++
 	if f.err != nil {
-		return Decision{}, f.err
+		return Decision{}, Decision{}, f.err
 	}
-	return f.decisions[window], nil
+	return f.decisions[WindowMinute], f.decisions[WindowHour], nil
 }
 
 type fakeLimitsProvider struct {

@@ -14,7 +14,7 @@ import (
 )
 
 // LimitsProvider resolves a tenant's configured per-minute/per-hour limits.
-// Declared here (the consumer) per the DI convention; *tenant.redisStatusCache
+// Declared here (the consumer) per the DI convention; *tenant.memoryStatusCache
 // satisfies it structurally.
 type LimitsProvider interface {
 	RateLimits(ctx context.Context, tenantID uuid.UUID) (tenant.RateLimits, error)
@@ -33,7 +33,7 @@ type Defaults struct {
 // validated claims rather than parsing the token itself. On any failure to
 // reach Redis or resolve tenant limits it fails open (allows the request)
 // and logs the failure, per FEAT-005 FR-3.
-func RateLimitMiddleware(limiter Limiter, limits LimitsProvider, defaults Defaults) func(http.Handler) http.Handler {
+func RateLimitMiddleware(limiter MultiWindowLimiter, limits LimitsProvider, defaults Defaults) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims, ok := auth.ClaimsFromContext(r.Context())
@@ -56,18 +56,7 @@ func RateLimitMiddleware(limiter Limiter, limits LimitsProvider, defaults Defaul
 			perMinute := resolveLimit(tenantLimits.PerMinute, defaults.PerMinute)
 			perHour := resolveLimit(tenantLimits.PerHour, defaults.PerHour)
 
-			minuteDecision, err := limiter.Allow(r.Context(), claims.TenantID, claims.UserID, WindowMinute, perMinute)
-			if err != nil {
-				logger.FromContext(r.Context()).Warn("ratelimit: redis unavailable, failing open",
-					"event_type", "rate_limit_fail_open",
-					"tenant_id", claims.TenantID.String(),
-					"reason", err.Error(),
-				)
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			hourDecision, err := limiter.Allow(r.Context(), claims.TenantID, claims.UserID, WindowHour, perHour)
+			minuteDecision, hourDecision, err := limiter.AllowBoth(r.Context(), claims.TenantID, claims.UserID, perMinute, perHour)
 			if err != nil {
 				logger.FromContext(r.Context()).Warn("ratelimit: redis unavailable, failing open",
 					"event_type", "rate_limit_fail_open",

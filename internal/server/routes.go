@@ -42,8 +42,10 @@ func (s *Server) RegisterRoutes() http.Handler {
 		auth.LoginHandler(s.userRepo, s.tenantRepo, s.refreshTokens, s.roleCache, s.signer, s.loginGuard, s.loginSecurity, s.trustedProxyHops, s.cookieConfig))))
 	mux.Handle("POST /auth/refresh", loginConcurrency(loginIPLimit(
 		auth.RefreshHandler(s.refreshTokens, s.userRepo, s.roleCache, s.signer, s.cookieConfig))))
-	mux.Handle("POST /auth/logout", s.requireAuth(auth.LogoutHandler(s.refreshTokens, s.cookieConfig)))
-	mux.Handle("GET /auth/me", s.requireAuth(auth.MeHandler(s.userRepo, s.roleCache)))
+	mux.Handle("POST /auth/logout", s.requireAuth(
+		ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(auth.LogoutHandler(s.refreshTokens, s.cookieConfig))))
+	mux.Handle("GET /auth/me", s.requireAuth(
+		ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(auth.MeHandler(s.userRepo, s.roleCache))))
 
 	mux.Handle("/api/", auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(
 		validation.ValidationMiddleware(s.routeTable, s.validationMaxBodyBytes)(
@@ -118,7 +120,7 @@ func (s *Server) requirePermission(permission string, next http.Handler) http.Ha
 
 // requireAuth wraps a handler with JWT authentication only, for endpoints
 // that need an authenticated caller but no specific permission.
-func (s *Server) requireAuth(next http.HandlerFunc) http.Handler {
+func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms)(next)
 }
 

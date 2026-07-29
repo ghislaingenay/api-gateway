@@ -35,7 +35,7 @@ type Server struct {
 	routeTable             *gateway.RouteTable
 	tenantStatus           gateway.TenantStatusChecker
 	proxy                  gateway.Proxier
-	rateLimiter            ratelimit.Limiter
+	rateLimiter            ratelimit.MultiWindowLimiter
 	ipLimiter              ratelimit.KeyLimiter
 	rateLimits             ratelimit.LimitsProvider
 	rateLimitDefs          ratelimit.Defaults
@@ -62,7 +62,7 @@ func NewServer(redisClient *redis.Client) *http.Server {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	roleCache, err := rbac.NewRoleCache(ctx, dbService)
+	roleCache, err := rbac.NewRoleCache(ctx, dbService, redisClient, rbac.RoleCacheTTL)
 	if err != nil {
 		logger.Default().Error("server: failed to load role cache", "error", err.Error())
 		os.Exit(1)
@@ -83,7 +83,7 @@ func NewServer(redisClient *redis.Client) *http.Server {
 	routeTable := gateway.NewRouteTable(toGatewayRoutes(routeEntries))
 
 	tenantRepo := tenant.NewRepository(dbService.GetDB())
-	tenantStatus := tenant.NewStatusCache(tenantRepo, redisClient, tenant.StatusCacheTTL)
+	tenantStatus := tenant.NewStatusCache(tenantRepo, tenant.StatusCacheTTL)
 
 	rateLimitConfig := config.LoadRateLimitConfig()
 	cacheConfig := config.LoadCacheConfig()
