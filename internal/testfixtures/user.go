@@ -7,11 +7,9 @@ import (
 )
 
 func NewValidUser() user.User {
-	return user.User {
-		ID:           uuid.New(),
-		TenantID:     uuid.New(),
-		RoleID:       uuid.New(),
-		Email:        "user@example.com",
-		PasswordHash: "$2a$12$Vw...", // standard mock hash
+	return user.User{
+		ID:          uuid.New(),
+		KeycloakSub: uuid.New().String(),
+		Email:       "user@example.com",
 	}
 }
