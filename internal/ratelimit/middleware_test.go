@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"api-gateway/internal/auth"
+	"api-gateway/internal/identity"
 	"api-gateway/internal/tenant"
 
 	"github.com/google/uuid"
@@ -39,9 +39,10 @@ func (f *fakeLimitsProvider) RateLimits(ctx context.Context, tenantID uuid.UUID)
 
 func newTestRequest(t *testing.T) *http.Request {
 	t.Helper()
-	claims := &auth.CustomClaims{TenantID: uuid.New(), UserID: uuid.New()}
+	tenantID := uuid.New()
+	ident := &identity.ResolvedIdentity{UserID: uuid.New(), TenantID: &tenantID}
 	req := httptest.NewRequest(http.MethodGet, "/api/thing", nil)
-	return req.WithContext(auth.WithClaims(req.Context(), claims))
+	return req.WithContext(identity.WithIdentity(req.Context(), ident))
 }
 
 func TestRateLimitMiddleware(t *testing.T) {
@@ -162,7 +163,7 @@ func TestRateLimitMiddleware(t *testing.T) {
 		}
 	})
 
-	t.Run("returns 401 when claims are missing", func(t *testing.T) {
+	t.Run("returns 401 when identity is missing", func(t *testing.T) {
 		t.Parallel()
 
 		limiter := &fakeLimiter{}
@@ -179,6 +180,32 @@ func TestRateLimitMiddleware(t *testing.T) {
 		}
 		if w.Result().StatusCode != http.StatusUnauthorized {
 			t.Fatalf("status = %d, want 401", w.Result().StatusCode)
+		}
+	})
+
+	t.Run("keys under uuid.Nil when identity has no tenant context", func(t *testing.T) {
+		t.Parallel()
+
+		limiter := &fakeLimiter{decisions: map[Window]Decision{
+			WindowMinute: {Allowed: true, Limit: 60, Remaining: 59},
+			WindowHour:   {Allowed: true, Limit: 1000, Remaining: 999},
+		}}
+		limits := &fakeLimitsProvider{limits: tenant.RateLimits{PerMinute: 60, PerHour: 1000}}
+		next, called := nextCalled()
+
+		handler := RateLimitMiddleware(limiter, limits, Defaults{PerMinute: 60, PerHour: 1000})(next)
+		w := httptest.NewRecorder()
+
+		ident := &identity.ResolvedIdentity{UserID: uuid.New()}
+		req := httptest.NewRequest(http.MethodGet, "/roles", nil)
+		req = req.WithContext(identity.WithIdentity(req.Context(), ident))
+		handler.ServeHTTP(w, req)
+
+		if !*called {
+			t.Fatal("expected next handler to be called")
+		}
+		if w.Result().StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", w.Result().StatusCode)
 		}
 	})
 }
