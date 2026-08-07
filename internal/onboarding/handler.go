@@ -26,7 +26,7 @@ func Handler(service Service) http.HandlerFunc {
 			return
 		}
 		if err := rules.Validate(req); err != nil {
-			writeError(w, r, http.StatusBadRequest, "invalid_request", "organization_name is required")
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "organization_name is required and must be between 2 and 255 characters")
 			return
 		}
 
