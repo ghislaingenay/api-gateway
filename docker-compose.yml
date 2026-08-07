@@ -29,6 +29,75 @@ services:
       timeout: 5s
       retries: 10
 
+  # Keycloak's own database (FEAT-012): deliberately isolated from the
+  # gateway's `postgres` service above, keeping Keycloak's schema lifecycle
+  # (its own migrations, its own credential storage) independent of the
+  # gateway's.
+  keycloak-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - keycloak_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Identity provider (FEAT-012): issues and signs the JWTs the gateway
+  # verifies (JWT_JWKS_URL/JWT_ISSUER below), replacing the local
+  # jwks-service/gateway-issued-token setup FEAT-011 used. Realm config is
+  # imported once at container start from keycloak/realm-export.json —
+  # realm `api-gateway`, client `client-frontend` (public, PKCE), a
+  # confidential `api-gateway-backend` client for audience validation, and
+  # seeded demo users matching cmd/seed's local demo tenant owners.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      # Full URL (not just a bare hostname) so the `iss` claim Keycloak
+      # stamps into every token is deterministically
+      # http://localhost:8090/realms/api-gateway — matching
+      # .env.example's JWT_ISSUER — regardless of which Host header a
+      # given request actually carries.
+      KC_HOSTNAME: http://localhost:8090
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      # Host port 8080 is already taken by the gateway service below, so
+      # Keycloak is exposed on 8090 instead — this is why JWT_ISSUER in
+      # .env.example is http://localhost:8090/..., not :8080.
+      - "8090:8080"
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    healthcheck:
+      # Keycloak's image has no curl/wget; this is the standard
+      # /dev/tcp-based workaround for its management health endpoint.
+      test:
+        [
+          "CMD-SHELL",
+          "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '200 OK' <&3",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
   # One-shot migration job (coding-standards.md "Database Migrations"): runs
   # to completion before the gateway starts, instead of migrating on
   # production server boot.
@@ -72,8 +141,14 @@ services:
       REDIS_URL: redis://redis:6379
       ALLOW_AUTO_DB_MIGRATION: "false"
       # Overrides .env's localhost value with the in-compose service name
-      # so the gateway container can reach jwks-service below.
-      JWT_JWKS_URL: http://jwks-service:8083/.well-known/jwks.json
+      # so the gateway container can reach the keycloak container directly
+      # to fetch signing keys. JWT_ISSUER is NOT overridden here — it's
+      # only ever string-compared against the token's iss claim, never
+      # dialed, and iss reflects how the frontend (always via the
+      # host-mapped port, outside this compose file) reached Keycloak, so
+      # .env's host-perspective value is correct whether the gateway
+      # validating it runs in-container or on the host.
+      JWT_JWKS_URL: http://keycloak:8080/realms/api-gateway/protocol/openid-connect/certs
       # Overrides .env's localhost value so config/routes.json's
       # "$env:ORDERS_SERVICE_UPSTREAM" resolves to the orders-service
       # container instead of the gateway container itself.
@@ -87,6 +162,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
 
   # Mock downstream service matching config/routes.json's orders-service
   # upstream (http://orders-service:8081), for exercising the gateway's
@@ -102,20 +179,7 @@ services:
     ports:
       - "8081:8081"
 
-  # Local JWKS publisher (no real auth/identity server exists yet): serves
-  # the public half of .env's JWT_SIGNING_KID/JWT_SIGNING_PRIVATE_KEY so
-  # the gateway's JWKS-backed key store has something to fetch from.
-  jwks-service:
-    image: api-gateway-devtools:local
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    command: ["mockjwks"]
-    env_file:
-      - .env
-    ports:
-      - "8083:8083"
-
 volumes:
   postgres_data:
   redis_data:
+  keycloak_db_data:
