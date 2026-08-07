@@ -46,7 +46,7 @@ type TenantStatusChecker interface {
 // re-verifying tenant membership itself.
 func NewHandler(routes *RouteTable, statusChecker TenantStatusChecker, proxy Proxier) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ident, ok := identity.IndentityFromContext(r.Context())
+		ident, ok := identity.IdentityFromContext(r.Context())
 		if !ok || ident == nil || ident.TenantID == nil {
 			writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing authenticated identity")
 			return

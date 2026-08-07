@@ -86,7 +86,7 @@ func TestResolveMiddleware_NoTenantHeader_AttachesIdentityWithoutTenant(t *testi
 
 	var got *ResolvedIdentity
 	handler := ResolveMiddleware(resolver, cache, roles)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got, _ = IndentityFromContext(r.Context())
+		got, _ = IdentityFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -179,7 +179,7 @@ func TestResolveMiddleware_VerifiedTenant_AttachesRoleAndPermissions(t *testing.
 
 	var got *ResolvedIdentity
 	handler := ResolveMiddleware(resolver, cache, roles)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got, _ = IndentityFromContext(r.Context())
+		got, _ = IdentityFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
 

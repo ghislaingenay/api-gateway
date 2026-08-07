@@ -15,7 +15,7 @@ func WithIdentity(ctx context.Context, identity *ResolvedIdentity) context.Conte
 
 // FromContext retrieves the ResolvedIdentity attached by ResolveMiddleware.
 // ok is false if none is present.
-func IndentityFromContext(ctx context.Context) (identity *ResolvedIdentity, ok bool) {
+func IdentityFromContext(ctx context.Context) (identity *ResolvedIdentity, ok bool) {
 	identity, ok = ctx.Value(identityContextKey).(*ResolvedIdentity)
 	return identity, ok
 }

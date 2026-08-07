@@ -95,7 +95,7 @@ func ResolveMiddleware(resolver Resolver, tenantUsers *TenantUserCache, roles rb
 // deliberately don't require one (FEAT-012 FR-2/FR-4).
 func RequireTenant(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ident, ok := IndentityFromContext(r.Context())
+		ident, ok := IdentityFromContext(r.Context())
 		if !ok || ident == nil {
 			writeUnauthorized(w, r)
 			return

@@ -14,7 +14,7 @@ import (
 // becomes its owner. Does not require X-Tenant-ID — there's no tenant yet.
 func Handler(service Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ident, ok := identity.IndentityFromContext(r.Context())
+		ident, ok := identity.IdentityFromContext(r.Context())
 		if !ok || ident == nil {
 			writeError(w, r, http.StatusUnauthorized, "unauthorized", "invalid or missing token")
 			return

@@ -17,7 +17,7 @@ import (
 // FR-6).
 func MeHandler(users user.Repository, profiles profile.Repository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ident, ok := IndentityFromContext(r.Context())
+		ident, ok := IdentityFromContext(r.Context())
 		if !ok || ident == nil {
 			writeUnauthorized(w, r)
 			return
