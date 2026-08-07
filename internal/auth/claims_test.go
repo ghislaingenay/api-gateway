@@ -3,8 +3,6 @@ package auth
 import (
 	"errors"
 	"testing"
-
-	"github.com/google/uuid"
 )
 
 func TestCustomClaims_Validate(t *testing.T) {
@@ -19,19 +17,19 @@ func TestCustomClaims_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "missing tenant_id",
+			name: "missing sub",
 			claims: func() CustomClaims {
 				c := validClaims()
-				c.TenantID = uuid.Nil
+				c.Subject = ""
 				return c
 			}(),
 			wantErr: true,
 		},
 		{
-			name: "missing user_id",
+			name: "missing email",
 			claims: func() CustomClaims {
 				c := validClaims()
-				c.UserID = uuid.Nil
+				c.Email = ""
 				return c
 			}(),
 			wantErr: true,
