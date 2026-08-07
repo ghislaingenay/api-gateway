@@ -16,10 +16,10 @@ COPY . .
 RUN CGO_ENABLED=0 go build -o /out/migrate ./cmd/migrate
 RUN CGO_ENABLED=0 go build -o /out/mockorders ./cmd/mockorders
 RUN CGO_ENABLED=0 go build -o /out/seed ./cmd/seed
-RUN CGO_ENABLED=0 go build -o /out/devreset ./cmd/devreset
+RUN CGO_ENABLED=0 go build -o /out/dbflush ./cmd/dbflush
 
 FROM alpine:3.20
 COPY --from=build /out/migrate /usr/local/bin/migrate
 COPY --from=build /out/mockorders /usr/local/bin/mockorders
 COPY --from=build /out/seed /usr/local/bin/seed
-COPY --from=build /out/devreset /usr/local/bin/devreset
+COPY --from=build /out/dbflush /usr/local/bin/dbflush
