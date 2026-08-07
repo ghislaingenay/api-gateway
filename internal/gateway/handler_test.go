@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"api-gateway/internal/auth"
+	"api-gateway/internal/identity"
 
 	"github.com/google/uuid"
 )
@@ -40,7 +40,7 @@ func TestNewHandler(t *testing.T) {
 	})
 	tenantID := uuid.New()
 
-	t.Run("missing claims returns 401", func(t *testing.T) {
+	t.Run("missing identity returns 401", func(t *testing.T) {
 		t.Parallel()
 		proxy := &fakeProxier{}
 		handler := NewHandler(routes, fakeStatusChecker{active: true}, proxy)
@@ -53,7 +53,26 @@ func TestNewHandler(t *testing.T) {
 			t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 		}
 		if proxy.called {
-			t.Error("proxy should not be called without claims")
+			t.Error("proxy should not be called without identity")
+		}
+	})
+
+	t.Run("identity with no tenant returns 401", func(t *testing.T) {
+		t.Parallel()
+		proxy := &fakeProxier{}
+		handler := NewHandler(routes, fakeStatusChecker{active: true}, proxy)
+
+		ident := &identity.ResolvedIdentity{UserID: uuid.New()}
+		req := httptest.NewRequest(http.MethodGet, "/api/orders/1", nil)
+		req = req.WithContext(identity.WithIdentity(req.Context(), ident))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+		}
+		if proxy.called {
+			t.Error("proxy should not be called without a resolved tenant")
 		}
 	})
 
@@ -62,7 +81,7 @@ func TestNewHandler(t *testing.T) {
 		proxy := &fakeProxier{}
 		handler := NewHandler(routes, fakeStatusChecker{err: errors.New("redis down")}, proxy)
 
-		req := withClaims(httptest.NewRequest(http.MethodGet, "/api/orders/1", nil), tenantID)
+		req := withIdentity(httptest.NewRequest(http.MethodGet, "/api/orders/1", nil), tenantID)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -76,7 +95,7 @@ func TestNewHandler(t *testing.T) {
 		proxy := &fakeProxier{}
 		handler := NewHandler(routes, fakeStatusChecker{active: false}, proxy)
 
-		req := withClaims(httptest.NewRequest(http.MethodGet, "/api/orders/1", nil), tenantID)
+		req := withIdentity(httptest.NewRequest(http.MethodGet, "/api/orders/1", nil), tenantID)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -93,7 +112,7 @@ func TestNewHandler(t *testing.T) {
 		proxy := &fakeProxier{}
 		handler := NewHandler(routes, fakeStatusChecker{active: true}, proxy)
 
-		req := withClaims(httptest.NewRequest(http.MethodGet, "/unknown", nil), tenantID)
+		req := withIdentity(httptest.NewRequest(http.MethodGet, "/unknown", nil), tenantID)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -107,9 +126,9 @@ func TestNewHandler(t *testing.T) {
 		proxy := &fakeProxier{}
 		handler := NewHandler(routes, fakeStatusChecker{active: true}, proxy)
 
-		req := withClaims(httptest.NewRequest(http.MethodGet, "/api/orders/1", nil), tenantID)
-		req.Header.Set("X-Tenant-ID", uuid.New().String()) // spoofed, must be stripped
-		req.Header.Set(TenantHeader, uuid.New().String())  // client-supplied, must be overwritten
+		req := withIdentity(httptest.NewRequest(http.MethodGet, "/api/orders/1", nil), tenantID)
+		req.Header.Set("X-Tenant-ID", tenantID.String())  // legitimate client input, left alone
+		req.Header.Set(TenantHeader, uuid.New().String()) // client-supplied, must be overwritten
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -123,15 +142,12 @@ func TestNewHandler(t *testing.T) {
 			t.Errorf("upstream = %q, want %q", proxy.upstream, "http://orders-service")
 		}
 		if proxy.header != tenantID.String() {
-			t.Errorf("forwarded tenant header = %q, want %q (claims tenant_id)", proxy.header, tenantID.String())
-		}
-		if req.Header.Get("X-Tenant-ID") != "" {
-			t.Error("spoofed X-Tenant-ID header was not stripped")
+			t.Errorf("forwarded tenant header = %q, want %q (resolved identity tenant_id)", proxy.header, tenantID.String())
 		}
 	})
 }
 
-func withClaims(r *http.Request, tenantID uuid.UUID) *http.Request {
-	claims := &auth.CustomClaims{TenantID: tenantID, UserID: uuid.New()}
-	return r.WithContext(auth.WithClaims(r.Context(), claims))
+func withIdentity(r *http.Request, tenantID uuid.UUID) *http.Request {
+	ident := &identity.ResolvedIdentity{UserID: uuid.New(), TenantID: &tenantID}
+	return r.WithContext(identity.WithIdentity(r.Context(), ident))
 }
