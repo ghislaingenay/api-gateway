@@ -17,9 +17,10 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// seededRoleCount is the number of rows inserted by
-// 00002_create_roles.sql (admin, manager, viewer).
-const seededRoleCount = 3
+// seededRoleCount is the number of rows inserted by 00002_create_roles.sql
+// (admin, manager, viewer) plus 00012_seed_role_permissions.sql (owner,
+// FEAT-012).
+const seededRoleCount = 4
 
 // seededPermissionCount is the number of rows inserted by
 // 00005_create_permissions.sql (kept in sync with that migration).
@@ -101,10 +102,10 @@ func TestNewRoleCache_LoadsSeededRolesAndPermissions(t *testing.T) {
 
 	roles := cache.All()
 	if len(roles) != seededRoleCount {
-		t.Fatalf("len(All()) = %d, want %d (admin, manager, viewer)", len(roles), seededRoleCount)
+		t.Fatalf("len(All()) = %d, want %d (admin, manager, viewer, owner)", len(roles), seededRoleCount)
 	}
 
-	for _, name := range []string{"admin", "manager", "viewer"} {
+	for _, name := range []string{"admin", "manager", "viewer", "owner"} {
 		role, ok := cache.GetRole(name)
 		if !ok {
 			t.Errorf("GetRole(%q) not found", name)

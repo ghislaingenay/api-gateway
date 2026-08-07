@@ -239,7 +239,7 @@ func (c *roleCache) AllPermissions() []Permission {
 
 func loadRoles(ctx context.Context, db *sql.DB) ([]Role, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, name, display_name, description, permissions, is_system_role, created_at, updated_at
+		SELECT id, name, display_name, description, is_system_role, created_at, updated_at
 		FROM roles
 		ORDER BY name
 	`)
@@ -254,27 +254,61 @@ func loadRoles(ctx context.Context, db *sql.DB) ([]Role, error) {
 
 	var roles []Role
 	for rows.Next() {
-		var (
-			role      Role
-			id        uuid.UUID
-			permsJSON []byte
-		)
-		if err := rows.Scan(&id, &role.Name, &role.DisplayName, &role.Description, &permsJSON, &role.IsSystemRole, &role.CreatedAt, &role.UpdatedAt); err != nil {
+		var role Role
+		if err := rows.Scan(&role.ID, &role.Name, &role.DisplayName, &role.Description, &role.IsSystemRole, &role.CreatedAt, &role.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan role: %w", err)
 		}
-		role.ID = id
-		permissions, err := unmarshalPermissions(permsJSON)
-		if err != nil {
-			return nil, fmt.Errorf("unmarshal role %q permissions: %w", role.Name, err)
-		}
-		role.Permissions = permissions
 		roles = append(roles, role)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate roles: %w", err)
 	}
 
+	permissionsByRole, err := loadPermissionsByRole(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	for i := range roles {
+		roles[i].Permissions = permissionsByRole[roles[i].ID]
+	}
+
 	return roles, nil
+}
+
+// loadPermissionsByRole returns each role's granted permission names,
+// joined from role_permissions, keyed by role_id.
+func loadPermissionsByRole(ctx context.Context, db *sql.DB) (map[uuid.UUID][]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT rp.role_id, p.name
+		FROM role_permissions rp
+		JOIN permissions p ON p.id = rp.permission_id
+		ORDER BY rp.role_id, p.name
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query role_permissions: %w", err)
+	}
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			logger.FromContext(ctx).Error("rbac: failed to close role_permissions rows", "error", cerr.Error())
+		}
+	}()
+
+	byRole := make(map[uuid.UUID][]string)
+	for rows.Next() {
+		var (
+			roleID uuid.UUID
+			name   string
+		)
+		if err := rows.Scan(&roleID, &name); err != nil {
+			return nil, fmt.Errorf("scan role_permission: %w", err)
+		}
+		byRole[roleID] = append(byRole[roleID], name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate role_permissions: %w", err)
+	}
+
+	return byRole, nil
 }
 
 // loadPermissions returns every row in the permissions table.
@@ -305,18 +339,5 @@ func loadPermissions(ctx context.Context, db *sql.DB) ([]Permission, error) {
 		return nil, fmt.Errorf("iterate permissions: %w", err)
 	}
 
-	return permissions, nil
-}
-
-// unmarshalPermissions decodes a role's permissions JSONB column (a JSON
-// array of "resource:action" strings) into a []string.
-func unmarshalPermissions(raw []byte) ([]string, error) {
-	if len(raw) == 0 {
-		return nil, nil
-	}
-	var permissions []string
-	if err := json.Unmarshal(raw, &permissions); err != nil {
-		return nil, fmt.Errorf("unmarshal permissions json: %w", err)
-	}
 	return permissions, nil
 }
