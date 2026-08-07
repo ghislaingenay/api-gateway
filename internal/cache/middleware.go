@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"api-gateway/internal/auth"
 	"api-gateway/internal/gateway"
+	"api-gateway/internal/identity"
 	"api-gateway/internal/logger"
 )
 
@@ -26,14 +26,14 @@ type RouteResolver interface {
 
 // CacheMiddleware serves cached responses for GET requests from Redis, and
 // stores successful downstream responses for future hits. It must run after
-// auth.JWTAuthMiddleware (reads tenant identity from validated claims) and
-// after any rate-limit middleware, so a cache hit still counts against the
-// tenant's rate limit rather than bypassing it. Non-GET requests bypass the
-// cache entirely (FEAT-006 FR-3). On a Redis error it fails open to the
-// downstream call, consistent with FEAT-005's fail-open philosophy. It
-// re-checks tenant status on a cache hit — gateway.NewHandler is the only
-// other place that check runs, and a hit never reaches it — so a
-// deactivated tenant is blocked from a cache hit exactly as it would be
+// identity.ResolveMiddleware (reads tenant identity from the resolved
+// identity) and after any rate-limit middleware, so a cache hit still
+// counts against the tenant's rate limit rather than bypassing it. Non-GET
+// requests bypass the cache entirely (FEAT-006 FR-3). On a Redis error it
+// fails open to the downstream call, consistent with FEAT-005's fail-open
+// philosophy. It re-checks tenant status on a cache hit — gateway.NewHandler
+// is the only other place that check runs, and a hit never reaches it — so
+// a deactivated tenant is blocked from a cache hit exactly as it would be
 // from a live downstream call.
 func CacheMiddleware(store ResponseCache, routes RouteResolver, tenantStatus gateway.TenantStatusChecker, defaultTTL time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -43,11 +43,12 @@ func CacheMiddleware(store ResponseCache, routes RouteResolver, tenantStatus gat
 				return
 			}
 
-			claims, ok := auth.ClaimsFromContext(r.Context())
-			if !ok || claims == nil {
+			ident, ok := identity.FromContext(r.Context())
+			if !ok || ident == nil || ident.TenantID == nil {
 				writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing authenticated identity")
 				return
 			}
+			tenantID := *ident.TenantID
 
 			route, ok := routes.Resolve(r.Method, r.URL.Path)
 			if !ok {
@@ -66,7 +67,7 @@ func CacheMiddleware(store ResponseCache, routes RouteResolver, tenantStatus gat
 			}
 
 			queryHash := NormalizeQueryHash(r.URL.RawQuery)
-			key := BuildKey(claims.TenantID, r.Method, r.URL.Path, queryHash)
+			key := BuildKey(tenantID, r.Method, r.URL.Path, queryHash)
 
 			cached, hit, err := store.Get(r.Context(), key)
 			if err != nil {
@@ -75,10 +76,10 @@ func CacheMiddleware(store ResponseCache, routes RouteResolver, tenantStatus gat
 					"error", err.Error(),
 				)
 			} else if hit {
-				active, err := tenantStatus.IsActive(r.Context(), claims.TenantID)
+				active, err := tenantStatus.IsActive(r.Context(), tenantID)
 				if err != nil {
 					logger.FromContext(r.Context()).Warn("cache: tenant status check failed, failing open to downstream",
-						"tenant_id", claims.TenantID.String(),
+						"tenant_id", tenantID.String(),
 						"error", err.Error(),
 					)
 				} else if !active {
@@ -87,7 +88,7 @@ func CacheMiddleware(store ResponseCache, routes RouteResolver, tenantStatus gat
 				} else {
 					logger.FromContext(r.Context()).Info("cache hit",
 						"event_type", "cache_hit",
-						"tenant_id", claims.TenantID.String(),
+						"tenant_id", tenantID.String(),
 						"path", r.URL.Path,
 					)
 					writeCached(w, r, cached)
@@ -97,7 +98,7 @@ func CacheMiddleware(store ResponseCache, routes RouteResolver, tenantStatus gat
 
 			logger.FromContext(r.Context()).Info("cache miss",
 				"event_type", "cache_miss",
-				"tenant_id", claims.TenantID.String(),
+				"tenant_id", tenantID.String(),
 				"path", r.URL.Path,
 			)
 			w.Header().Set("X-Cache", "MISS")
