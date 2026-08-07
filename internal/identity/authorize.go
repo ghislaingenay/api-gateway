@@ -17,7 +17,7 @@ import (
 func RequirePermission(permission string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ident, ok := FromContext(r.Context())
+			ident, ok := IdentityFromContext(r.Context())
 			if !ok || ident == nil {
 				writeUnauthorized(w, r)
 				return
@@ -41,7 +41,7 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 	required := strings.Join(roles, ",")
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ident, ok := FromContext(r.Context())
+			ident, ok := IdentityFromContext(r.Context())
 			if !ok || ident == nil {
 				writeUnauthorized(w, r)
 				return

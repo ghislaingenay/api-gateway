@@ -43,7 +43,7 @@ func CacheMiddleware(store ResponseCache, routes RouteResolver, tenantStatus gat
 				return
 			}
 
-			ident, ok := identity.FromContext(r.Context())
+			ident, ok := identity.IdentityFromContext(r.Context())
 			if !ok || ident == nil || ident.TenantID == nil {
 				writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing authenticated identity")
 				return
