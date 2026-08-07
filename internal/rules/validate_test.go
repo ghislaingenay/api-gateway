@@ -87,11 +87,9 @@ func TestValidate_Role(t *testing.T) {
 
 func validUser() user.User {
 	return user.User{
-		ID:           uuid.New(),
-		TenantID:     uuid.New(),
-		RoleID:       uuid.New(),
-		Email:        "user@example.com",
-		PasswordHash: "hash",
+		ID:          uuid.New(),
+		KeycloakSub: uuid.New().String(),
+		Email:       "user@example.com",
 	}
 }
 
@@ -104,8 +102,7 @@ func TestValidate_User(t *testing.T) {
 		{"valid user", func(u *user.User) {}, false},
 		{"malformed email fails", func(u *user.User) { u.Email = "not-an-email" }, true},
 		{"empty email fails", func(u *user.User) { u.Email = "" }, true},
-		{"missing tenant id fails", func(u *user.User) { u.TenantID = uuid.Nil }, true},
-		{"missing role id fails", func(u *user.User) { u.RoleID = uuid.Nil }, true},
+		{"missing keycloak_sub fails", func(u *user.User) { u.KeycloakSub = "" }, true},
 	}
 
 	for _, tt := range tests {
