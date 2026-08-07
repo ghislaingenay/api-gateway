@@ -1,10 +1,10 @@
 # FEAT-012: Keycloak as Identity Provider
 
-Status: Draft
+Status: Doing
 
 Owner: Ghislain Genay
 Created: 2026-08-02
-Last Updated: 2026-08-02
+Last Updated: 2026-08-04
 
 Technical Design: [TD-012 - Keycloak as Identity Provider](../technical-designs/TD-012-keycloak-identity-provider.md)
 
@@ -153,11 +153,11 @@ disallowed algorithm.
 
 #### Acceptance Criteria
 
-- [ ] `JWT_JWKS_URL` points at Keycloak's realm certs endpoint; the existing
+- [x] `JWT_JWKS_URL` points at Keycloak's realm certs endpoint; the existing
       JWKS key store (FEAT-011) requires no interface changes
-- [ ] `JWT_ISSUER` is validated against the token's `iss` claim; a token
+- [x] `JWT_ISSUER` is validated against the token's `iss` claim; a token
       from an unexpected issuer is rejected with 401
-- [ ] `alg=none` and any algorithm outside `JWT_ALLOWED_ALGORITHMS` are
+- [x] `alg=none` and any algorithm outside `JWT_ALLOWED_ALGORITHMS` are
       rejected with 401 (unchanged from FEAT-001)
 
 ---
@@ -170,11 +170,11 @@ authenticated caller belongs to that tenant.
 
 #### Acceptance Criteria
 
-- [ ] A request with `X-Tenant-ID` for a tenant the caller has no
+- [x] A request with `X-Tenant-ID` for a tenant the caller has no
       `tenant_users` row for is rejected with 403
-- [ ] A route that requires tenant context with `X-Tenant-ID` absent is
+- [x] A route that requires tenant context with `X-Tenant-ID` absent is
       rejected with 400
-- [ ] A verified `(sub, tenant_id)` pair resolves to a `ResolvedIdentity`
+- [x] A verified `(sub, tenant_id)` pair resolves to a `ResolvedIdentity`
       carrying the caller's role and permissions for that tenant
 
 ---
@@ -187,9 +187,9 @@ granting that user access to any tenant.
 
 #### Acceptance Criteria
 
-- [ ] First request from a new `sub` creates a `users` row
+- [x] First request from a new `sub` creates a `users` row
       (`keycloak_sub`, `email`) with no `tenant_users` membership
-- [ ] A subsequent request from the same `sub` reuses the existing row
+- [x] A subsequent request from the same `sub` reuses the existing row
       rather than creating a duplicate
 
 ---
@@ -201,11 +201,11 @@ tenant via `POST /onboarding` and become its owner.
 
 #### Acceptance Criteria
 
-- [ ] `POST /onboarding` creates a `tenants` row and a `tenant_users` row
+- [x] `POST /onboarding` creates a `tenants` row and a `tenant_users` row
       with the `owner` role for the calling user, in one transaction
-- [ ] The response includes the new `tenant_id` so the frontend can start
+- [x] The response includes the new `tenant_id` so the frontend can start
       sending it as `X-Tenant-ID` on subsequent requests
-- [ ] `POST /onboarding` does not require `X-Tenant-ID` (there's no tenant
+- [x] `POST /onboarding` does not require `X-Tenant-ID` (there's no tenant
       yet)
 
 ---
@@ -218,11 +218,11 @@ never from JWT claims.
 
 #### Acceptance Criteria
 
-- [ ] `roles.permissions` JSONB column is removed; permissions come from a
+- [x] `roles.permissions` JSONB column is removed; permissions come from a
       normalized `role_permissions(role_id, permission_id)` join table
-- [ ] Membership/role resolution is cached (in-process + Redis) with a
+- [x] Membership/role resolution is cached (in-process + Redis) with a
       configurable TTL; cache miss falls back to PostgreSQL
-- [ ] A role change in `tenant_users` is visible to the affected user
+- [x] A role change in `tenant_users` is visible to the affected user
       within one cache TTL, without requiring a new token
 
 ---
@@ -235,11 +235,11 @@ memberships (no `X-Tenant-ID`) or their tenant-scoped role/profile
 
 #### Acceptance Criteria
 
-- [ ] Without `X-Tenant-ID`: response includes `user_id`, `email`, and the
+- [x] Without `X-Tenant-ID`: response includes `user_id`, `email`, and the
       list of tenants the caller belongs to with their role in each
-- [ ] With a verified `X-Tenant-ID`: response includes `tenant_id`, `role`,
+- [x] With a verified `X-Tenant-ID`: response includes `tenant_id`, `role`,
       `permissions`, and profile fields (display name, timezone)
-- [ ] With an unverified `X-Tenant-ID` (caller isn't a member): 403
+- [x] With an unverified `X-Tenant-ID` (caller isn't a member): 403
 
 ---
 
@@ -250,8 +250,8 @@ removed from the gateway, not merely disabled.
 
 #### Acceptance Criteria
 
-- [ ] All three routes return 404 (no matching route), not 501/disabled
-- [ ] No password hashing, refresh-token storage, or login brute-force
+- [x] All three routes return 404 (no matching route), not 501/disabled
+- [x] No password hashing, refresh-token storage, or login brute-force
       guarding code remains reachable in the gateway
 
 ---

@@ -14,4 +14,4 @@
 | FEAT-009 | [Observability & Health Checks](FEAT-009-observability-health-checks.md)                     | Done   | [TD-009](../technical-designs/TD-009-observability-health-checks.md) |
 | FEAT-010 | [API Documentation & Dev Environment](FEAT-010-api-docs-dev-environment.md)                  | Done   | [TD-010](../technical-designs/TD-010-api-docs-dev-environment.md)    |
 | FEAT-011 | [JWKS Key Rotation](FEAT-011-jwks-key-rotation.md)                                           | Done   | [TD-011](../technical-designs/TD-011-jwks-key-rotation.md)           |
-| FEAT-012 | [Keycloak as Identity Provider](FEAT-012-keycloak-identity-provider.md)                      | Draft  | [TD-012](../technical-designs/TD-012-keycloak-identity-provider.md)  |
+| FEAT-012 | [Keycloak as Identity Provider](FEAT-012-keycloak-identity-provider.md)                      | Doing  | [TD-012](../technical-designs/TD-012-keycloak-identity-provider.md)  |
