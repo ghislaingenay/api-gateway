@@ -11,14 +11,16 @@ import (
 )
 
 // JWTAuthMiddleware validates the Authorization: Bearer <jwt> header on
-// every request against an explicit signing-algorithm allowlist, resolves
-// the signing key via the token's kid through keyStore, and attaches
-// CustomClaims to the request context for downstream middleware.
+// every request against an explicit signing-algorithm allowlist and the
+// configured issuer, resolves the signing key via the token's kid through
+// keyStore, and attaches CustomClaims to the request context for
+// downstream middleware.
 //
 // Passing allowedAlgorithms explicitly to the underlying parser (rather than
 // trusting the token's own alg header) is what prevents algorithm confusion
-// attacks, including alg=none.
-func JWTAuthMiddleware(keyStore KeyStore, allowedAlgorithms []string) func(http.Handler) http.Handler {
+// attacks, including alg=none. Requiring issuer is what rejects a
+// signature-valid token from an unexpected issuer (FEAT-012).
+func JWTAuthMiddleware(keyStore KeyStore, allowedAlgorithms []string, issuer string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tokenString, err := bearerToken(r)
@@ -38,7 +40,7 @@ func JWTAuthMiddleware(keyStore KeyStore, allowedAlgorithms []string) func(http.
 					return nil, ErrUnknownKey
 				}
 				return keyStore.GetKey(kid)
-			}, jwt.WithValidMethods(allowedAlgorithms))
+			}, jwt.WithValidMethods(allowedAlgorithms), jwt.WithIssuer(issuer))
 			if err != nil {
 				logger.FromContext(r.Context()).Warn("jwt auth rejected",
 					"event_type", "auth_failure",

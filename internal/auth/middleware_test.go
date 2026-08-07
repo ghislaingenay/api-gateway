@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 )
 
 // x509PublicKeyBytes marshals the RSA public key to DER, simulating an
@@ -120,10 +119,19 @@ func TestJWTAuthMiddleware(t *testing.T) {
 			wantStatusCode: http.StatusUnauthorized,
 		},
 		{
-			name: "missing required claim (tenant_id) rejected",
+			name: "missing required claim (email) rejected",
 			token: func(t *testing.T) string {
 				c := validClaims()
-				c.TenantID = uuid.Nil
+				c.Email = ""
+				return signRS256(t, rsaKey, kid, c)
+			},
+			wantStatusCode: http.StatusUnauthorized,
+		},
+		{
+			name: "unexpected issuer rejected",
+			token: func(t *testing.T) string {
+				c := validClaims()
+				c.Issuer = "https://not-keycloak.test/realms/other"
 				return signRS256(t, rsaKey, kid, c)
 			},
 			wantStatusCode: http.StatusUnauthorized,
@@ -140,7 +148,7 @@ func TestJWTAuthMiddleware(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			middleware := JWTAuthMiddleware(keyStore, []string{"RS256"})
+			middleware := JWTAuthMiddleware(keyStore, []string{"RS256"}, testIssuer)
 			handler := middleware(newProtectedHandler(t))
 
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -177,7 +185,7 @@ func TestJWTAuthMiddleware_KeyRotation(t *testing.T) {
 		}
 	})
 
-	middleware := JWTAuthMiddleware(multiKeyStore, []string{"RS256"})
+	middleware := JWTAuthMiddleware(multiKeyStore, []string{"RS256"}, testIssuer)
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
