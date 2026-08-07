@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/MicahParks/jwkset"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 )
 
 // generateRSAKeyPair returns a fresh RSA key pair for signing test tokens.
@@ -43,16 +43,24 @@ func validClaims() CustomClaims {
 	now := time.Now()
 	return CustomClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "keycloak-sub-" + uuidLikeSuffix(),
+			Issuer:    testIssuer,
 			ExpiresAt: jwt.NewNumericDate(now.Add(10 * time.Minute)),
 			NotBefore: jwt.NewNumericDate(now.Add(-time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(now.Add(-time.Minute)),
 		},
-		TenantID: uuid.New(),
-		UserID:   uuid.New(),
-		Role:     "admin",
-		RoleID:   uuid.New(),
-		Email:    "user@example.com",
+		Email: "user@example.com",
 	}
+}
+
+// testIssuer is the issuer validClaims stamps and JWTAuthMiddleware in
+// tests is configured to require.
+const testIssuer = "https://keycloak.test/realms/api-gateway"
+
+// uuidLikeSuffix returns a short unique suffix so tests generating multiple
+// validClaims don't collide on Subject.
+func uuidLikeSuffix() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
 
 // signRS256 signs claims with key under kid, using RS256.
