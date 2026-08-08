@@ -14,7 +14,11 @@ tags:
   - name: Health
     description: Liveness/readiness probes. Never authenticated, rate limited, or cached.
   - name: Auth
-    description: Login, refresh, logout, and current-user endpoints.
+    description: >-
+      Current-user endpoint. Login/token issuance happens directly against
+      Keycloak, not the gateway — see bearerAuth below.
+  - name: Onboarding
+    description: Self-service tenant creation for authenticated callers with no tenant yet.
   - name: RBAC
     description: Read-only role and permission catalog.
   - name: Gateway
@@ -97,125 +101,94 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /auth/login:
-    post:
-      tags: [Auth]
-      operationId: login
-      summary: Log in
-      description: >-
-        Exchanges tenant-scoped email/password credentials for an access
-        token. The refresh token is not included in the response body —
-        it's set as an httpOnly, path-scoped (/auth) cookie, so client-side
-        JS never has access to it.
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/LoginRequest"
-      responses:
-        "200":
-          description: Login succeeded.
-          headers:
-            Set-Cookie:
-              description: >-
-                httpOnly refresh_token cookie, scoped to /auth, valid for 7
-                days.
-              schema:
-                type: string
-                example: refresh_token=<token>; Path=/auth; HttpOnly; Secure; SameSite=Lax
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TokenResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          description: Invalid email, password, or tenant slug.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /auth/refresh:
-    post:
-      tags: [Auth]
-      operationId: refreshTokens
-      summary: Refresh tokens
-      description: >-
-        Rotates the caller's refresh token (read from the refresh_token
-        cookie, not a request body) for a new access token and a new
-        refresh_token cookie.
-      security: []
-      responses:
-        "200":
-          description: Refresh succeeded.
-          headers:
-            Set-Cookie:
-              description: New httpOnly refresh_token cookie, scoped to /auth.
-              schema:
-                type: string
-                example: refresh_token=<token>; Path=/auth; HttpOnly; Secure; SameSite=Lax
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TokenResponse"
-        "401":
-          description: Missing, invalid, or expired refresh token cookie.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /auth/logout:
-    post:
-      tags: [Auth]
-      operationId: logout
-      summary: Log out
-      description: >-
-        Revokes the caller's refresh token (read from the refresh_token
-        cookie) and clears the cookie. Idempotent — an unknown,
-        already-revoked, or missing refresh token still returns 200.
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Logged out.
-          headers:
-            Set-Cookie:
-              description: Clears the refresh_token cookie.
-              schema:
-                type: string
-                example: refresh_token=; Path=/auth; HttpOnly; Max-Age=0
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: logged out
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
   /auth/me:
     get:
       tags: [Auth]
       operationId: getCurrentUser
       summary: Current user
-      description: Returns the authenticated caller, refetched for freshness.
+      description: >-
+        Returns the authenticated caller. X-Tenant-ID is optional here
+        (unlike /api/* and /onboarding): omit it to list every tenant the
+        caller belongs to (e.g. for a tenant picker); supply a verified one
+        to get the caller's role/permissions/profile scoped to it.
       security:
         - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/OptionalTenantID"
       responses:
         "200":
-          description: Current user.
+          description: >-
+            Current user. Shape depends on whether X-Tenant-ID was
+            supplied — see MeWithoutTenantResponse vs CurrentUserResponse.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/UserResponse"
+                oneOf:
+                  - $ref: "#/components/schemas/MeWithoutTenantResponse"
+                  - $ref: "#/components/schemas/CurrentUserResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /onboarding:
+    post:
+      tags: [Onboarding]
+      operationId: onboard
+      summary: Create a tenant and become its owner
+      description: >-
+        For an authenticated caller with no tenant yet: creates a new
+        tenant and grants the caller the `owner` role on it. No
+        X-Tenant-ID header required or accepted — there's no tenant until
+        this succeeds.
+
+
+        Capped at `MAX_TENANTS_PER_USER` tenant memberships per user
+        (default 1) — once reached, further calls return 409 rather than
+        creating another tenant. Independently rate limited to
+        `ONBOARDING_PER_DAY_LIMIT` attempts per user per rolling day
+        (default 1), separate from and stricter than the general
+        per-tenant/user API rate limit, since tenant creation is a
+        privileged, expensive operation.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OnboardRequest"
+      responses:
+        "201":
+          description: Tenant created; caller is now its owner.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OnboardResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: >-
+            Caller already belongs to the maximum number of tenants
+            (MAX_TENANTS_PER_USER).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: >-
+            Onboarding attempt limit exceeded (ONBOARDING_PER_DAY_LIMIT
+            per user per day) — distinct from the general per-tenant
+            RateLimited response.
+          headers:
+            Retry-After:
+              description: Seconds until the next onboarding attempt is allowed.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/orders/{id}:
     get:
@@ -229,6 +202,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - $ref: "#/components/parameters/RequiredTenantID"
         - name: id
           in: path
           required: true
@@ -259,6 +233,8 @@ paths:
         to JWT auth, request validation, and the `orders:create` permission.
       security:
         - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RequiredTenantID"
       requestBody:
         required: true
         content:
@@ -291,6 +267,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - $ref: "#/components/parameters/RequiredTenantID"
         - name: id
           in: path
           required: true
@@ -315,6 +292,32 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: >-
+        RS256 JWT issued by Keycloak (not the gateway) — obtain one via the
+        realm's standard OAuth2 flows directly against Keycloak, then send
+        it here. The gateway only validates tokens; it issues none.
+
+  parameters:
+    RequiredTenantID:
+      name: X-Tenant-ID
+      in: header
+      required: true
+      description: >-
+        Which tenant to act in, re-verified against tenant_users on every
+        request. Required on every /api/* route.
+      schema:
+        type: string
+        format: uuid
+    OptionalTenantID:
+      name: X-Tenant-ID
+      in: header
+      required: false
+      description: >-
+        Which tenant to act in. Optional on GET /auth/me only — omit it to
+        list every tenant the caller belongs to instead.
+      schema:
+        type: string
+        format: uuid
 
   responses:
     BadRequest:
@@ -397,35 +400,48 @@ components:
         description:
           type: string
 
-    LoginRequest:
+    TenantAccessResponse:
       type: object
-      required: [email, password, tenant_slug]
+      description: One tenant the caller belongs to.
       properties:
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        role:
+          type: string
+
+    MeWithoutTenantResponse:
+      type: object
+      description: GET /auth/me's shape when no X-Tenant-ID was supplied.
+      properties:
+        user_id:
+          type: string
+          format: uuid
         email:
           type: string
           format: email
-        password:
-          type: string
-          format: password
-        tenant_slug:
-          type: string
+        tenants:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantAccessResponse"
 
-    TokenResponse:
+    ProfileResponse:
       type: object
       properties:
-        access_token:
+        display_name:
           type: string
-        expires_in:
-          type: integer
-          example: 900
-        token_type:
+        timezone:
           type: string
-          example: Bearer
 
-    UserResponse:
+    CurrentUserResponse:
       type: object
+      description: >-
+        GET /auth/me's shape when a verified X-Tenant-ID was supplied:
+        identity, tenant-scoped role/permissions, and profile.
       properties:
-        id:
+        user_id:
           type: string
           format: uuid
         email:
@@ -436,6 +452,31 @@ components:
           format: uuid
         role:
           type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        profile:
+          $ref: "#/components/schemas/ProfileResponse"
+
+    OnboardRequest:
+      type: object
+      required: [organization_name]
+      properties:
+        organization_name:
+          type: string
+          minLength: 2
+          maxLength: 255
+
+    OnboardResponse:
+      type: object
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          example: owner
 
     ErrorResponse:
       type: object
