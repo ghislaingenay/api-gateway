@@ -1,6 +1,6 @@
 # FEAT-012: Keycloak as Identity Provider
 
-Status: Doing
+Status: Done
 
 Owner: Ghislain Genay
 Created: 2026-08-02

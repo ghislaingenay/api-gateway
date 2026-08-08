@@ -2,8 +2,16 @@
 //
 // Prerequisites:
 //   - k6 installed (https://k6.io/docs/get-started/installation/)
-//   - the local stack running: `docker compose up --build`
+//   - the local stack running: `docker compose up --build` (gateway +
+//     Keycloak)
 //   - a seeded tenant/user, e.g. via `go run ./cmd/seed` (see README.md)
+//
+// Auth is against Keycloak directly (FEAT-012), not the gateway — the
+// gateway has no /auth/login. setup() gets a token via the Resource Owner
+// Password Credentials grant against the dedicated `client-loadtest`
+// client (public, direct-access-grants-only, no PKCE/browser needed;
+// see keycloak/realm-export.json), then reads the caller's tenant id from
+// GET /auth/me since Keycloak doesn't know about gateway tenants.
 //
 // Run:
 //   k6 run loadtest/gateway-load-test.js
@@ -11,9 +19,11 @@
 // Override defaults (seeded local dev user) as needed:
 //   k6 run \
 //     -e BASE_URL=http://localhost:8080 \
+//     -e KEYCLOAK_URL=http://localhost:8090 \
+//     -e KEYCLOAK_REALM=api-gateway \
+//     -e KEYCLOAK_CLIENT_ID=client-loadtest \
 //     -e LOGIN_EMAIL=viewer@seed.test \
 //     -e LOGIN_PASSWORD=password123 \
-//     -e TENANT_SLUG=seed-tenant \
 //     loadtest/gateway-load-test.js
 
 import http from 'k6/http';
@@ -21,9 +31,11 @@ import { check, sleep } from 'k6';
 import { uuidv4 } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
+const KEYCLOAK_URL = __ENV.KEYCLOAK_URL || 'http://localhost:8090';
+const KEYCLOAK_REALM = __ENV.KEYCLOAK_REALM || 'api-gateway';
+const KEYCLOAK_CLIENT_ID = __ENV.KEYCLOAK_CLIENT_ID || 'client-loadtest';
 const LOGIN_EMAIL = __ENV.LOGIN_EMAIL || 'viewer@seed.test';
 const LOGIN_PASSWORD = __ENV.LOGIN_PASSWORD || 'password123';
-const TENANT_SLUG = __ENV.TENANT_SLUG || 'seed-tenant';
 
 // By default k6's http_req_failed metric marks any non-2xx/3xx response as
 // a failure, regardless of the checks below. 404 and 429 are legitimate,
@@ -47,30 +59,54 @@ export const options = {
   },
 };
 
-// Runs once before the VUs start: logs in a single time and shares the
-// token, instead of every VU hitting /auth/login itself.
+// Runs once before the VUs start: logs in against Keycloak a single time
+// and shares the token and tenant id, instead of every VU authenticating
+// itself.
 export function setup() {
-  const res = http.post(
-    `${BASE_URL}/auth/login`,
-    JSON.stringify({
-      email: LOGIN_EMAIL,
+  const tokenRes = http.post(
+    `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token`,
+    {
+      grant_type: 'password',
+      client_id: KEYCLOAK_CLIENT_ID,
+      username: LOGIN_EMAIL,
       password: LOGIN_PASSWORD,
-      tenant_slug: TENANT_SLUG,
-    }),
-    { headers: { 'Content-Type': 'application/json' } }
+    },
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
   );
 
-  check(res, { 'login succeeded': (r) => r.status === 200 });
-  if (res.status !== 200) {
-    throw new Error(`setup: login failed with status ${res.status}: ${res.body}`);
+  check(tokenRes, { 'keycloak login succeeded': (r) => r.status === 200 });
+  if (tokenRes.status !== 200) {
+    throw new Error(`setup: keycloak login failed with status ${tokenRes.status}: ${tokenRes.body}`);
   }
 
-  return { token: res.json('access_token') };
+  const token = tokenRes.json('access_token');
+
+  // The gateway never issues tenant ids; ask it directly which tenants
+  // this seeded user belongs to (FEAT-012's GET /auth/me without
+  // X-Tenant-ID).
+  const meRes = http.get(`${BASE_URL}/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  check(meRes, { 'auth/me succeeded': (r) => r.status === 200 });
+  if (meRes.status !== 200) {
+    throw new Error(`setup: auth/me failed with status ${meRes.status}: ${meRes.body}`);
+  }
+
+  const tenants = meRes.json('tenants');
+  if (!tenants || tenants.length === 0) {
+    throw new Error(`setup: ${LOGIN_EMAIL} has no tenant memberships to load-test against`);
+  }
+
+  return { token, tenantId: tenants[0].tenant_id };
 }
 
 export default function (data) {
   const authHeaders = {
-    headers: { Authorization: `Bearer ${data.token}` },
+    headers: {
+      Authorization: `Bearer ${data.token}`,
+      'X-Tenant-ID': data.tenantId,
+    },
   };
 
   const roll = Math.random();
