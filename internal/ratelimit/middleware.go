@@ -96,6 +96,48 @@ func RateLimitMiddleware(limiter MultiWindowLimiter, limits LimitsProvider, defa
 	}
 }
 
+// OnboardingRateLimitMiddleware enforces a strict per-user limit (e.g. one
+// per day) on POST /onboarding attempts, keyed by caller identity alone
+// rather than tenant+user — there's no tenant yet at this point. It's
+// deliberately separate from RateLimitMiddleware's generic per-tenant/user
+// API limit: tenant creation is a privileged, expensive operation that
+// warrants a much stricter bound than ordinary API traffic. Like
+// RateLimitMiddleware, it must run after identity.ResolveMiddleware and
+// fails open (logging the failure) if the limiter backend is unreachable.
+func OnboardingRateLimitMiddleware(limiter SingleWindowLimiter, window Window, limit int) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ident, ok := identity.IdentityFromContext(r.Context())
+			if !ok || ident == nil {
+				writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing authenticated identity")
+				return
+			}
+
+			decision, err := limiter.Allow(r.Context(), "onboarding:"+ident.UserID.String(), window, limit)
+			if err != nil {
+				logger.FromContext(r.Context()).Warn("ratelimit: failed to check onboarding limit, failing open",
+					"event_type", "rate_limit_fail_open",
+					"user_id", ident.UserID.String(),
+					"reason", err.Error(),
+				)
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(decision.Limit))
+			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(decision.Remaining))
+
+			if !decision.Allowed {
+				w.Header().Set("Retry-After", strconv.Itoa(int(decision.RetryAfter.Seconds())))
+				writeError(w, r, http.StatusTooManyRequests, "rate_limit_exceeded", "too many requests")
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func resolveLimit(configured, fallback int) int {
 	if configured <= 0 {
 		return fallback

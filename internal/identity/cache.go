@@ -208,3 +208,60 @@ func toTenantUser(userID uuid.UUID, ctu cachedTenantUser) (*TenantUser, error) {
 func cacheKey(keycloakSub string, tenantID uuid.UUID) string {
 	return fmt.Sprintf("identity:tenant_user:%s:%s", keycloakSub, tenantID.String())
 }
+
+// userEntry is a cached JIT-provisioned local user id, keyed by Keycloak
+// subject.
+type userEntry struct {
+	userID    uuid.UUID
+	expiresAt time.Time
+}
+
+// EnsureUserCache wraps a Resolver so ResolveMiddleware's per-request
+// EnsureUser call doesn't upsert Postgres on every request. Resolver.
+// EnsureUser is an INSERT ... ON CONFLICT DO UPDATE against a single row
+// per caller; unconditionally on every /api/* request (rather than only on
+// first sight of a subject) that serializes concurrent callers on the
+// row's lock and dominates request latency under load. Concurrent
+// misses/expiries for the same subject are collapsed via singleflight, same
+// as TenantUserCache above.
+type EnsureUserCache struct {
+	Resolver
+	ttl time.Duration
+
+	mu   sync.RWMutex
+	data map[string]userEntry
+
+	group singleflight.Group
+}
+
+// NewEnsureUserCache returns an EnsureUserCache wrapping resolver. Its
+// ResolveTenantUser method passes straight through to resolver via the
+// embedded interface; only EnsureUser is cached.
+func NewEnsureUserCache(resolver Resolver, ttl time.Duration) *EnsureUserCache {
+	return &EnsureUserCache{Resolver: resolver, ttl: ttl, data: make(map[string]userEntry)}
+}
+
+// EnsureUser implements Resolver, overriding the embedded Resolver's method.
+func (c *EnsureUserCache) EnsureUser(ctx context.Context, keycloakSub, email string) (uuid.UUID, error) {
+	c.mu.RLock()
+	e, ok := c.data[keycloakSub]
+	c.mu.RUnlock()
+	if ok && time.Now().Before(e.expiresAt) {
+		return e.userID, nil
+	}
+
+	v, err, _ := c.group.Do(keycloakSub, func() (interface{}, error) {
+		id, err := c.Resolver.EnsureUser(ctx, keycloakSub, email)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		c.mu.Lock()
+		c.data[keycloakSub] = userEntry{userID: id, expiresAt: time.Now().Add(c.ttl)}
+		c.mu.Unlock()
+		return id, nil
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return v.(uuid.UUID), nil
+}

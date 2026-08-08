@@ -64,6 +64,19 @@ func TestHandler_MissingOrganizationName(t *testing.T) {
 	}
 }
 
+func TestHandler_TenantLimitReached(t *testing.T) {
+	t.Parallel()
+
+	handler := Handler(&fakeService{err: ErrTenantLimitReached})
+	req := withIdentity(httptest.NewRequest(http.MethodPost, "/onboarding", bytes.NewBufferString(`{"organization_name":"Acme"}`)))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusConflict)
+	}
+}
+
 func TestHandler_ServiceError(t *testing.T) {
 	t.Parallel()
 

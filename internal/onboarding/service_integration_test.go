@@ -3,6 +3,7 @@ package onboarding_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -77,7 +78,7 @@ func mustInsertUser(t *testing.T, db *sql.DB, sub string) uuid.UUID {
 
 func TestService_Onboard_CreatesTenantAndOwnerMembership(t *testing.T) {
 	db := mustStartMigratedPostgres(t)
-	svc := onboarding.NewService(db)
+	svc := onboarding.NewService(db, 1)
 	userID := mustInsertUser(t, db, "sub-onboard-1")
 
 	tenantID, err := svc.Onboard(context.Background(), userID, "New Org")
@@ -108,10 +109,32 @@ func TestService_Onboard_CreatesTenantAndOwnerMembership(t *testing.T) {
 	}
 }
 
-func TestService_Onboard_AllowsMultipleTenantsPerUser(t *testing.T) {
+func TestService_Onboard_RejectsSecondTenantAtDefaultLimit(t *testing.T) {
 	db := mustStartMigratedPostgres(t)
-	svc := onboarding.NewService(db)
+	svc := onboarding.NewService(db, 1)
 	userID := mustInsertUser(t, db, "sub-onboard-2")
+
+	if _, err := svc.Onboard(context.Background(), userID, "Org One"); err != nil {
+		t.Fatalf("first Onboard() error = %v", err)
+	}
+	_, err := svc.Onboard(context.Background(), userID, "Org Two")
+	if !errors.Is(err, onboarding.ErrTenantLimitReached) {
+		t.Fatalf("second Onboard() error = %v, want ErrTenantLimitReached", err)
+	}
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM tenant_users WHERE user_id = $1`, userID).Scan(&count); err != nil {
+		t.Fatalf("count tenant_users: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("tenant_users count = %d, want 1 (rejected attempt shouldn't create a row)", count)
+	}
+}
+
+func TestService_Onboard_AllowsMultipleTenantsUpToConfiguredLimit(t *testing.T) {
+	db := mustStartMigratedPostgres(t)
+	svc := onboarding.NewService(db, 2)
+	userID := mustInsertUser(t, db, "sub-onboard-3")
 
 	first, err := svc.Onboard(context.Background(), userID, "Org One")
 	if err != nil {
@@ -125,11 +148,7 @@ func TestService_Onboard_AllowsMultipleTenantsPerUser(t *testing.T) {
 		t.Fatal("expected two distinct tenants, got the same id twice")
 	}
 
-	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM tenant_users WHERE user_id = $1`, userID).Scan(&count); err != nil {
-		t.Fatalf("count tenant_users: %v", err)
-	}
-	if count != 2 {
-		t.Errorf("tenant_users count = %d, want 2", count)
+	if _, err := svc.Onboard(context.Background(), userID, "Org Three"); !errors.Is(err, onboarding.ErrTenantLimitReached) {
+		t.Fatalf("third Onboard() error = %v, want ErrTenantLimitReached", err)
 	}
 }

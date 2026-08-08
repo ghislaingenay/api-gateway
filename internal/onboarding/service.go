@@ -22,12 +22,15 @@ type Service interface {
 }
 
 type service struct {
-	db *sql.DB
+	db                *sql.DB
+	maxTenantsPerUser int
 }
 
-// NewService returns a Service backed by PostgreSQL.
-func NewService(db *sql.DB) Service {
-	return &service{db: db}
+// NewService returns a Service backed by PostgreSQL. maxTenantsPerUser caps
+// how many tenants a single user may hold membership in; Onboard refuses
+// with ErrTenantLimitReached once a caller is already a member of that many.
+func NewService(db *sql.DB, maxTenantsPerUser int) Service {
+	return &service{db: db, maxTenantsPerUser: maxTenantsPerUser}
 }
 
 // Onboard implements Service.
@@ -41,6 +44,22 @@ func (s *service) Onboard(ctx context.Context, userID uuid.UUID, organizationNam
 			logger.FromContext(ctx).Error("onboarding: rollback transaction", "error", rbErr.Error())
 		}
 	}()
+
+	// Serializes concurrent onboarding attempts from the same user on this
+	// transaction-scoped advisory lock, so two requests racing the
+	// count-then-insert below can't both slip past the limit check before
+	// either commits.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, userID.String()); err != nil {
+		return uuid.Nil, fmt.Errorf("acquire onboarding lock: %w", err)
+	}
+
+	var tenantCount int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM tenant_users WHERE user_id = $1`, userID).Scan(&tenantCount); err != nil {
+		return uuid.Nil, fmt.Errorf("count existing tenant memberships: %w", err)
+	}
+	if tenantCount >= s.maxTenantsPerUser {
+		return uuid.Nil, ErrTenantLimitReached
+	}
 
 	var tenantID uuid.UUID
 	err = tx.QueryRowContext(ctx, `

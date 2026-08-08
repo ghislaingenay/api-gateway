@@ -30,6 +30,17 @@
       ]
     },
     {
+      "clientId": "client-loadtest",
+      "name": "Gateway Load Test (k6, direct grant only)",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
       "clientId": "api-gateway-backend",
       "name": "Gateway Backend (audience validation)",
       "enabled": true,

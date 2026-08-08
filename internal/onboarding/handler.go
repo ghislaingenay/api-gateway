@@ -2,6 +2,7 @@ package onboarding
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"api-gateway/internal/identity"
@@ -32,6 +33,10 @@ func Handler(service Service) http.HandlerFunc {
 
 		tenantID, err := service.Onboard(r.Context(), ident.UserID, req.OrganizationName)
 		if err != nil {
+			if errors.Is(err, ErrTenantLimitReached) {
+				writeError(w, r, http.StatusConflict, "tenant_limit_reached", "you already belong to the maximum number of tenants")
+				return
+			}
 			logger.FromContext(r.Context()).Error("onboarding: create tenant", "user_id", ident.UserID.String(), "error", err.Error())
 			writeError(w, r, http.StatusInternalServerError, "internal_error", "could not create tenant")
 			return

@@ -1,10 +1,10 @@
 # API Gateway
 
-A production-grade, multi-tenant API gateway written in Go: JWT authentication
-with role/permission-based access control (RBAC/CBAC), distributed rate
-limiting, response caching, request validation, resilient proxying (retry +
-timeout), and structured observability, all in front of your downstream
-services.
+A production-grade, multi-tenant API gateway written in Go: Keycloak-backed
+JWT authentication with server-side tenant/role resolution
+(RBAC/CBAC), distributed rate limiting, response caching, request
+validation, resilient proxying (retry + timeout), and structured
+observability, all in front of your downstream services.
 
 ## Architecture
 
@@ -15,21 +15,27 @@ Client ──HTTP──▶ CorrelationID ──▶│ CORS ─▶ ServeMux      
                                    │                               │
                                    │  /health, /ready, /docs       │──▶ (no auth, no rate limit, no cache)
                                    │  /roles, /permissions         │──▶ JWT auth + permission check
-                                   │  /auth/login, /auth/refresh   │──▶ public
-                                   │  /auth/logout, /auth/me       │──▶ JWT auth
+                                   │  /auth/me, /onboarding        │──▶ JWT auth (no tenant required)
                                    │                               │
                                    │  /api/*  (proxied routes)     │
-                                   │    JWT auth                   │
-                                   │      → request validation     │
-                                   │        → rate limiting        │
-                                   │          → response cache     │
-                                   │            → resilient proxy  │──▶ downstream service (retry + deadline)
+                                   │    JWT auth (Keycloak JWKS)   │
+                                   │      → tenant/role resolution │
+                                   │        → request validation   │
+                                   │          → rate limiting      │
+                                   │            → response cache   │
+                                   │              → resilient proxy│──▶ downstream service (retry + deadline)
                                    └───────┬───────┬───────────────┘
                                            │       │
                                      ┌─────▼──┐ ┌──▼───┐
                                      │Postgres│ │ Redis│
                                      └────────┘ └──────┘
 ```
+
+Login, token issuance, and refresh all happen directly against **Keycloak**
+(its own container + database in `docker-compose.yml`) — the gateway never
+sees a password. Tenant identity is a client-supplied `X-Tenant-ID` header,
+re-verified against a `tenant_users` table on every request rather than
+trusted from the JWT (see [TD-012](context/technical-designs/TD-012-keycloak-identity-provider.md#7-security)).
 
 Route → upstream mapping, auth/permission requirements, cache TTLs, retry
 policy, and validation rules are all declared statically in
@@ -62,12 +68,12 @@ works out of the box.
 This starts, in dependency order:
 
 1. **postgres** (`localhost:5433`) and **redis** (`localhost:6380`) — health-checked before anything else starts.
-2. **migrate** — a one-shot job (`cmd/migrate`) that applies all pending database migrations, then exits. The gateway only starts once this completes successfully.
-3. **gateway** (`localhost:8080`) — the API gateway itself.
-4. **jwks-service** (`localhost:8083`) — a local JWKS publisher (`cmd/mockjwks`) so the gateway's JWKS-backed key store has something to fetch from.
-5. **orders-service** (`localhost:8081`) — a minimal mock downstream service (`cmd/mockorders`) that `config/routes.json` proxies `/api/orders/*` to, so you can see the gateway's full request flow (auth → validation → rate limit → cache → resilient proxy) end-to-end.
+2. **keycloak-db** and **keycloak** (`localhost:8090`) — the identity provider, with its realm (`api-gateway`), clients (`client-frontend`, `api-gateway-backend`), and seeded demo users auto-imported from [`keycloak/realm-export.json`](keycloak/realm-export.json) on first boot.
+3. **migrate** — a one-shot job (`cmd/migrate`) that applies all pending database migrations, then exits. The gateway only starts once this completes successfully.
+4. **gateway** (`localhost:8080`) — the API gateway itself, verifying tokens against Keycloak's realm JWKS endpoint.
+5. **orders-service** (`localhost:8081`) — a minimal mock downstream service (`cmd/mockorders`) that `config/routes.json` proxies `/api/orders/*` to, so you can see the gateway's full request flow (auth → tenant resolution → validation → rate limit → cache → resilient proxy) end-to-end.
 
-Then seed a tenant and two test users (`admin@seed.test` / `viewer@seed.test`, password `password123`) against the compose Postgres:
+Then seed a tenant and the gateway-side rows for the two Keycloak demo users (`admin@seed.test` / `viewer@seed.test`, password `password123`) against the compose Postgres:
 
 ```bash
 APP_ENV=development DB_HOST=localhost DB_PORT=5433 \
@@ -76,16 +82,20 @@ DB_SSL_MODE=disable DB_SCHEMA=public \
 go run ./cmd/seed
 ```
 
+(`make dbflush` does a full drop/re-migrate/reseed in one step if you need
+to reset local state.)
+
 Open [http://localhost:8080/docs](http://localhost:8080/docs) for Swagger
-UI, or try the full flow from the command line:
+UI. Login now happens against Keycloak directly, not the gateway — sign in
+at [http://localhost:8090/realms/api-gateway/account](http://localhost:8090/realms/api-gateway/account)
+with a demo user's credentials to obtain a JWT (or drive `client-frontend`'s
+PKCE flow from a real frontend), then call the gateway with it:
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8080/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"admin@seed.test","password":"password123","tenant_slug":"seed-tenant"}' \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
-
 curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/auth/me
+
+curl -H "Authorization: Bearer $TOKEN" -H "X-Tenant-ID: <tenant-id-from-auth-me>" \
   http://localhost:8080/api/orders/$(python3 -c 'import uuid;print(uuid.uuid4())')
 ```
 
@@ -102,10 +112,9 @@ running locally.
 
 - `Dockerfile` builds the production gateway image (`cmd/api` only).
 - `Dockerfile.dev` builds a local-development-only image bundling
-  `cmd/migrate`, `cmd/mockorders`, and `cmd/mockjwks` — never shipped
-  to production. Compose builds it once and reuses it across the
-  `migrate`, `orders-service`, and `jwks-service` services via
-  `command:` overrides.
+  `cmd/migrate`, `cmd/mockorders`, `cmd/seed`, and `cmd/dbflush` — never
+  shipped to production. Compose builds it once and reuses it across the
+  `migrate` and `orders-service` services via `command:` overrides.
 
 ## Load Testing
 
@@ -122,8 +131,10 @@ go run ./cmd/seed   # if you haven't already seeded a tenant/user
 k6 run loadtest/gateway-load-test.js
 ```
 
-Override the target or credentials with `-e`, e.g.
-`k6 run -e BASE_URL=... -e LOGIN_EMAIL=... loadtest/gateway-load-test.js`.
+Auth is against Keycloak directly via a dedicated `client-loadtest` client
+(direct-access-grants only, no PKCE needed for scripting). Override the
+target or credentials with `-e`, e.g.
+`k6 run -e BASE_URL=... -e KEYCLOAK_URL=... -e LOGIN_EMAIL=... loadtest/gateway-load-test.js`.
 
 **Run it in GitHub Actions:** add the `load-test` label to a pull request.
 This triggers [`.github/workflows/load-test.yml`](.github/workflows/load-test.yml),
@@ -197,6 +208,7 @@ and key trade-offs:
 - [TD-009: Observability & Health Checks](context/technical-designs/TD-009-observability-health-checks.md)
 - [TD-010: API Documentation & Dev Environment](context/technical-designs/TD-010-api-docs-dev-environment.md)
 - [TD-011: JWKS Key Rotation](context/technical-designs/TD-011-jwks-key-rotation.md)
+- [TD-012: Keycloak as Identity Provider](context/technical-designs/TD-012-keycloak-identity-provider.md)
 
 The full feature index is at [context/features/README.md](context/features/README.md).
 
@@ -206,7 +218,8 @@ Planned next steps:
 
 - **Bot detection** — identify and rate-limit/block automated/bot traffic hitting the gateway, beyond today's per-tenant rate limiting.
 - **Hot reload on file change** — reload the running gateway (config/routes, and ideally code) when a watched file changes, without a manual restart.
-- **Identity provider integration** — replace the local mock JWKS publisher (`cmd/mockjwks`) with a real identity provider (e.g. Auth0, Keycloak, Cognito) as the source of truth for JWT signing/verification.
+- **Inviting members into an existing tenant** — FEAT-012's onboarding only covers a tenant's first user (its owner); adding further members is left to a future feature.
+- **mTLS for service-to-service authentication** — Keycloak's realm signing keypair is the JWT trust root; certificate-based service auth for downstream calls is separate and still open.
 - **Cloud deployment** — a production deployment target (container registry, orchestration, managed Postgres/Redis, secrets management) beyond the current local-only `docker-compose.yml`.
 
 ## Contributing

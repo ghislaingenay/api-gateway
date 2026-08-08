@@ -179,3 +179,98 @@ func TestTenantUserCache_Resolve_WritesThroughToRedisOnLoad(t *testing.T) {
 		t.Errorf("redis Set() called %d times, want 1", len(store.setCalls))
 	}
 }
+
+type spyEnsureResolver struct {
+	userID uuid.UUID
+	err    error
+	calls  int
+}
+
+func (s *spyEnsureResolver) EnsureUser(ctx context.Context, keycloakSub, email string) (uuid.UUID, error) {
+	s.calls++
+	if s.err != nil {
+		return uuid.Nil, s.err
+	}
+	return s.userID, nil
+}
+
+func (s *spyEnsureResolver) ResolveTenantUser(ctx context.Context, userID, tenantID uuid.UUID) (*TenantUser, error) {
+	return nil, errors.New("not used by these tests")
+}
+
+func TestEnsureUserCache_EnsureUser_CachesAcrossCalls(t *testing.T) {
+	t.Parallel()
+
+	userID := uuid.New()
+	resolver := &spyEnsureResolver{userID: userID}
+	cache := NewEnsureUserCache(resolver, time.Minute)
+
+	for range 5 {
+		got, err := cache.EnsureUser(context.Background(), "sub-1", "user@example.com")
+		if err != nil {
+			t.Fatalf("EnsureUser() error = %v", err)
+		}
+		if got != userID {
+			t.Errorf("EnsureUser() = %v, want %v", got, userID)
+		}
+	}
+
+	if resolver.calls != 1 {
+		t.Errorf("underlying resolver called %d times, want 1 (repeat calls should hit the cache)", resolver.calls)
+	}
+}
+
+func TestEnsureUserCache_EnsureUser_DifferentSubjectsNotShared(t *testing.T) {
+	t.Parallel()
+
+	resolver := &spyEnsureResolver{userID: uuid.New()}
+	cache := NewEnsureUserCache(resolver, time.Minute)
+
+	if _, err := cache.EnsureUser(context.Background(), "sub-1", "a@example.com"); err != nil {
+		t.Fatalf("EnsureUser() error = %v", err)
+	}
+	if _, err := cache.EnsureUser(context.Background(), "sub-2", "b@example.com"); err != nil {
+		t.Fatalf("EnsureUser() error = %v", err)
+	}
+
+	if resolver.calls != 2 {
+		t.Errorf("underlying resolver called %d times, want 2 (distinct subjects shouldn't share a cache entry)", resolver.calls)
+	}
+}
+
+func TestEnsureUserCache_EnsureUser_ExpiryReloadsFromResolver(t *testing.T) {
+	t.Parallel()
+
+	resolver := &spyEnsureResolver{userID: uuid.New()}
+	cache := NewEnsureUserCache(resolver, -time.Minute) // already-expired entries
+
+	if _, err := cache.EnsureUser(context.Background(), "sub-1", "a@example.com"); err != nil {
+		t.Fatalf("EnsureUser() error = %v", err)
+	}
+	if _, err := cache.EnsureUser(context.Background(), "sub-1", "a@example.com"); err != nil {
+		t.Fatalf("EnsureUser() error = %v", err)
+	}
+
+	if resolver.calls != 2 {
+		t.Errorf("underlying resolver called %d times, want 2 (expired entry should reload)", resolver.calls)
+	}
+}
+
+func TestEnsureUserCache_ResolveTenantUser_PassesThroughToWrappedResolver(t *testing.T) {
+	t.Parallel()
+
+	userID, tenantID, roleID := uuid.New(), uuid.New(), uuid.New()
+	resolver := &spyResolver{membership: &TenantUser{UserID: userID, RoleID: roleID}}
+	cache := NewEnsureUserCache(resolver, time.Minute)
+
+	tu, err := cache.ResolveTenantUser(context.Background(), userID, tenantID)
+	if err != nil {
+		t.Fatalf("ResolveTenantUser() error = %v", err)
+	}
+	if tu.RoleID != roleID {
+		t.Errorf("RoleID = %v, want %v", tu.RoleID, roleID)
+	}
+	if resolver.calls != 1 {
+		t.Errorf("wrapped resolver called %d times, want 1", resolver.calls)
+	}
+}

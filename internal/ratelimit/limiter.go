@@ -17,6 +17,7 @@ type Window string
 const (
 	WindowMinute Window = "minute"
 	WindowHour   Window = "hour"
+	WindowDay    Window = "day"
 )
 
 // Duration returns the wall-clock length of the window.
@@ -26,6 +27,8 @@ func (w Window) Duration() time.Duration {
 		return time.Minute
 	case WindowHour:
 		return time.Hour
+	case WindowDay:
+		return 24 * time.Hour
 	default:
 		return 0
 	}
@@ -61,6 +64,14 @@ local hour = incr(KEYS[3], KEYS[4], ARGV[2])
 return {minute[1], minute[2], hour[1], hour[2]}
 `
 
+// singleWindowScript checks one arbitrary-duration window (KEYS[1..2],
+// ARGV[1]), for limits with no natural minute/hour pairing — e.g. a
+// per-day cap on a single expensive route rather than the generic
+// per-tenant/user API limit.
+const singleWindowScript = incrFunc + `
+return incr(KEYS[1], KEYS[2], ARGV[1])
+`
+
 // Decision is the outcome of a rate-limit check for one window.
 type Decision struct {
 	Allowed    bool
@@ -75,6 +86,22 @@ type Decision struct {
 // two sequential ones.
 type MultiWindowLimiter interface {
 	AllowBoth(ctx context.Context, tenantID, userID uuid.UUID, minuteLimit, hourLimit int) (minute, hour Decision, err error)
+}
+
+// SingleWindowLimiter enforces a limit over one arbitrary window against a
+// caller-chosen key, for route-specific limits (e.g. onboarding's
+// one-per-day cap) that don't fit the generic tenant/user minute+hour
+// shape MultiWindowLimiter provides.
+type SingleWindowLimiter interface {
+	Allow(ctx context.Context, key string, window Window, limit int) (Decision, error)
+}
+
+// Limiter is satisfied by an implementation providing both the generic
+// per-tenant/user API rate limit and the single-window limit used for
+// stricter, route-specific limits.
+type Limiter interface {
+	MultiWindowLimiter
+	SingleWindowLimiter
 }
 
 // limiterStore is the subset of *redis.Client the limiter needs, sized to
@@ -139,6 +166,35 @@ func (l *SlidingWindowLimiter) AllowBoth(ctx context.Context, tenantID, userID u
 	hourDecision := buildDecision(hourCurrent, hourPrevious, now, hourBucket, WindowHour.Duration(), hourLimit)
 
 	return minuteDecision, hourDecision, nil
+}
+
+// Allow implements SingleWindowLimiter, checking key against one window
+// with a single Redis round trip (singleWindowScript).
+func (l *SlidingWindowLimiter) Allow(ctx context.Context, key string, window Window, limit int) (Decision, error) {
+	now := l.now().UTC()
+	bucket := now.Truncate(window.Duration())
+
+	keys := []string{
+		bucketKey(key, window, bucket),
+		bucketKey(key, window, bucket.Add(-window.Duration())),
+	}
+
+	res, err := l.redis.Eval(ctx, singleWindowScript, keys, (2 * window.Duration()).Milliseconds()).Result()
+	if err != nil {
+		return Decision{}, fmt.Errorf("ratelimit: eval single window: %w", err)
+	}
+
+	values, ok := res.([]interface{})
+	if !ok || len(values) != 2 {
+		return Decision{}, fmt.Errorf("ratelimit: unexpected eval result shape: %#v", res)
+	}
+
+	current, previous, err := toCounts(values[0], values[1])
+	if err != nil {
+		return Decision{}, fmt.Errorf("ratelimit: parse window result: %w", err)
+	}
+
+	return buildDecision(current, previous, now, bucket, window.Duration(), limit), nil
 }
 
 func bucketKey(key string, window Window, bucketStart time.Time) string {
