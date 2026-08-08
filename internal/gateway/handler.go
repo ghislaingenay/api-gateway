@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"api-gateway/internal/audit"
-	"api-gateway/internal/auth"
+	"api-gateway/internal/identity"
 	"api-gateway/internal/logger"
 
 	"github.com/google/uuid"
@@ -19,11 +19,15 @@ import (
 // It is the only source downstream services may trust for tenant identity.
 const TenantHeader = "X-Gateway-Tenant-ID"
 
-// clientTenantHeaders are headers a client might supply to spoof tenant
-// identity. They are always stripped before a request is forwarded
-// downstream, regardless of their value — tenant identity comes from
-// validated JWT claims only (ADR-003).
-var clientTenantHeaders = []string{"X-Tenant-ID", TenantHeader}
+// clientTenantHeaders are headers a client might supply to spoof the
+// trusted downstream tenant header. They are always stripped before a
+// request is forwarded downstream, regardless of their value. Unlike
+// pre-FEAT-012 (ADR-003), X-Tenant-ID is not stripped here — it's now
+// legitimate, server-verified client input (re-verified against
+// tenant_users by identity.ResolveMiddleware on every request), not a
+// spoofing vector; only the trusted internal TenantHeader needs
+// protecting from a client trying to set it directly.
+var clientTenantHeaders = []string{TenantHeader}
 
 // TenantStatusChecker reports whether a tenant is active. Declared here
 // (the consumer) rather than in the tenant package per the DI convention;
@@ -33,20 +37,23 @@ type TenantStatusChecker interface {
 }
 
 // NewHandler returns the gateway's core request handler: it resolves the
-// tenant from validated claims, rejects inactive tenants, resolves the
+// tenant from the resolved identity, rejects inactive tenants, resolves the
 // downstream route from the static RouteTable, strips any client-supplied
 // tenant headers, sets the trusted TenantHeader, and proxies the request
-// upstream. It must run after auth.JWTAuthMiddleware, since it reads claims
-// from the request context rather than parsing the token itself.
+// upstream. It must run after identity.ResolveMiddleware and
+// identity.RequireTenant, since it reads a required, already-verified
+// TenantID from the request context rather than parsing the token or
+// re-verifying tenant membership itself.
 func NewHandler(routes *RouteTable, statusChecker TenantStatusChecker, proxy Proxier) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := auth.ClaimsFromContext(r.Context())
-		if !ok || claims == nil {
+		ident, ok := identity.IdentityFromContext(r.Context())
+		if !ok || ident == nil || ident.TenantID == nil {
 			writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing authenticated identity")
 			return
 		}
+		tenantID := *ident.TenantID
 
-		active, err := statusChecker.IsActive(r.Context(), claims.TenantID)
+		active, err := statusChecker.IsActive(r.Context(), tenantID)
 		if err != nil {
 			logger.FromContext(r.Context()).Error("gateway: tenant status check failed", "error", err.Error())
 			writeError(w, r, http.StatusInternalServerError, "internal_error", "failed to verify tenant status")
@@ -70,19 +77,19 @@ func NewHandler(routes *RouteTable, statusChecker TenantStatusChecker, proxy Pro
 			r = r.WithContext(WithRoute(r.Context(), route))
 		}
 
-		if missing := missingPermissions(claims.Permissions, route.PermissionsRequired); len(missing) > 0 {
-			audit.LogAuthzDecision(r.Context(), false, claims.TenantID, claims.UserID, strings.Join(route.PermissionsRequired, ","))
+		if missing := missingPermissions(ident.Permissions, route.PermissionsRequired); len(missing) > 0 {
+			audit.LogAuthzDecision(r.Context(), false, tenantID, ident.UserID, strings.Join(route.PermissionsRequired, ","))
 			writeForbidden(w, r, "insufficient permissions")
 			return
 		}
 		if len(route.PermissionsRequired) > 0 {
-			audit.LogAuthzDecision(r.Context(), true, claims.TenantID, claims.UserID, strings.Join(route.PermissionsRequired, ","))
+			audit.LogAuthzDecision(r.Context(), true, tenantID, ident.UserID, strings.Join(route.PermissionsRequired, ","))
 		}
 
 		for _, header := range clientTenantHeaders {
 			r.Header.Del(header)
 		}
-		r.Header.Set(TenantHeader, claims.TenantID.String())
+		r.Header.Set(TenantHeader, tenantID.String())
 
 		proxy.Proxy(w, r, route.Upstream)
 	})

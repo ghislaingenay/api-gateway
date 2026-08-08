@@ -52,12 +52,6 @@ local function incr(curKey, prevKey, ttl)
 end
 `
 
-// incrScript checks a single window: KEYS[1..2] are its current/previous
-// bucket keys, ARGV[1] is the current bucket's expiry in ms.
-const incrScript = incrFunc + `
-return incr(KEYS[1], KEYS[2], ARGV[1])
-`
-
 // bothWindowsScript checks the minute window (KEYS[1..2], ARGV[1]) and the
 // hour window (KEYS[3..4], ARGV[2]) in one round trip, so a combined check
 // against both windows costs a single Redis call instead of two.
@@ -83,13 +77,6 @@ type MultiWindowLimiter interface {
 	AllowBoth(ctx context.Context, tenantID, userID uuid.UUID, minuteLimit, hourLimit int) (minute, hour Decision, err error)
 }
 
-// KeyLimiter enforces a rate limit for a single window against an arbitrary
-// caller-supplied key, for callers that have no tenant/user identity yet
-// (e.g. pre-authentication endpoints keyed by client IP).
-type KeyLimiter interface {
-	AllowKey(ctx context.Context, key string, window Window, limit int) (Decision, error)
-}
-
 // limiterStore is the subset of *redis.Client the limiter needs, sized to
 // its one call so tests can substitute a fake without a live Redis instance.
 type limiterStore interface {
@@ -110,37 +97,9 @@ func NewSlidingWindowLimiter(redisClient *redis.Client) *SlidingWindowLimiter {
 	return &SlidingWindowLimiter{redis: redisClient, now: time.Now}
 }
 
-// AllowKey implements KeyLimiter, applying the sliding-window approximation
-// against an arbitrary key for a single window.
-func (l *SlidingWindowLimiter) AllowKey(ctx context.Context, key string, window Window, limit int) (Decision, error) {
-	dur := window.Duration()
-	if dur <= 0 {
-		return Decision{}, fmt.Errorf("ratelimit: unknown window %q", window)
-	}
-
-	now := l.now().UTC()
-	bucketStart := now.Truncate(dur)
-	prevBucketStart := bucketStart.Add(-dur)
-
-	res, err := l.redis.Eval(ctx, incrScript,
-		[]string{bucketKey(key, window, bucketStart), bucketKey(key, window, prevBucketStart)},
-		(2 * dur).Milliseconds(),
-	).Result()
-	if err != nil {
-		return Decision{}, fmt.Errorf("ratelimit: eval sliding window: %w", err)
-	}
-
-	current, previous, err := parseCounts(res)
-	if err != nil {
-		return Decision{}, fmt.Errorf("ratelimit: parse sliding window result: %w", err)
-	}
-
-	return buildDecision(current, previous, now, bucketStart, dur, limit), nil
-}
-
 // AllowBoth implements MultiWindowLimiter, checking the minute and hour
-// windows for tenantID/userID with a single Redis round trip (bothWindowsScript)
-// instead of two sequential AllowKey calls.
+// windows for tenantID/userID with a single Redis round trip
+// (bothWindowsScript) instead of two sequential per-window evals.
 func (l *SlidingWindowLimiter) AllowBoth(ctx context.Context, tenantID, userID uuid.UUID, minuteLimit, hourLimit int) (Decision, Decision, error) {
 	key := fmt.Sprintf("%s:%s", tenantID, userID)
 
@@ -208,14 +167,6 @@ func buildDecision(current, previous int64, now, bucketStart time.Time, dur time
 		Remaining:  remaining,
 		RetryAfter: dur - elapsed,
 	}
-}
-
-func parseCounts(res interface{}) (current, previous int64, err error) {
-	values, ok := res.([]interface{})
-	if !ok || len(values) != 2 {
-		return 0, 0, fmt.Errorf("unexpected eval result shape: %#v", res)
-	}
-	return toCounts(values[0], values[1])
 }
 
 func toCounts(curRaw, prevRaw interface{}) (current, previous int64, err error) {

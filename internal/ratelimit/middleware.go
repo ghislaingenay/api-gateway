@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"api-gateway/internal/auth"
+	"api-gateway/internal/identity"
 	"api-gateway/internal/logger"
 	"api-gateway/internal/tenant"
 
@@ -28,25 +28,32 @@ type Defaults struct {
 }
 
 // RateLimitMiddleware enforces per-tenant, per-user, per-minute and per-hour
-// request limits and sets the standard rate-limit response headers. It must run
-// after auth.JWTAuthMiddleware, since it reads tenant/user identity from
-// validated claims rather than parsing the token itself. On any failure to
-// reach Redis or resolve tenant limits it fails open (allows the request)
-// and logs the failure, per FEAT-005 FR-3.
+// request limits and sets the standard rate-limit response headers. It must
+// run after identity.ResolveMiddleware, since it reads tenant/user identity
+// from the resolved identity rather than parsing the token itself. Routes
+// with no tenant context (e.g. GET /roles) are keyed under uuid.Nil rather
+// than rejected — RateLimitMiddleware is also wired into non-tenant-scoped
+// chains, unlike identity.RequireTenant. On any failure to reach Redis or
+// resolve tenant limits it fails open (allows the request) and logs the
+// failure, per FEAT-005 FR-3.
 func RateLimitMiddleware(limiter MultiWindowLimiter, limits LimitsProvider, defaults Defaults) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			claims, ok := auth.ClaimsFromContext(r.Context())
-			if !ok || claims == nil {
+			ident, ok := identity.IdentityFromContext(r.Context())
+			if !ok || ident == nil {
 				writeError(w, r, http.StatusUnauthorized, "unauthorized", "missing authenticated identity")
 				return
 			}
+			tenantID := uuid.Nil
+			if ident.TenantID != nil {
+				tenantID = *ident.TenantID
+			}
 
-			tenantLimits, err := limits.RateLimits(r.Context(), claims.TenantID)
+			tenantLimits, err := limits.RateLimits(r.Context(), tenantID)
 			if err != nil {
 				logger.FromContext(r.Context()).Warn("ratelimit: failed to resolve tenant limits, failing open",
 					"event_type", "rate_limit_fail_open",
-					"tenant_id", claims.TenantID.String(),
+					"tenant_id", tenantID.String(),
 					"reason", err.Error(),
 				)
 				next.ServeHTTP(w, r)
@@ -56,11 +63,11 @@ func RateLimitMiddleware(limiter MultiWindowLimiter, limits LimitsProvider, defa
 			perMinute := resolveLimit(tenantLimits.PerMinute, defaults.PerMinute)
 			perHour := resolveLimit(tenantLimits.PerHour, defaults.PerHour)
 
-			minuteDecision, hourDecision, err := limiter.AllowBoth(r.Context(), claims.TenantID, claims.UserID, perMinute, perHour)
+			minuteDecision, hourDecision, err := limiter.AllowBoth(r.Context(), tenantID, ident.UserID, perMinute, perHour)
 			if err != nil {
 				logger.FromContext(r.Context()).Warn("ratelimit: redis unavailable, failing open",
 					"event_type", "rate_limit_fail_open",
-					"tenant_id", claims.TenantID.String(),
+					"tenant_id", tenantID.String(),
 					"reason", err.Error(),
 				)
 				next.ServeHTTP(w, r)

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"api-gateway/internal/auth"
 	"api-gateway/internal/gateway"
+	"api-gateway/internal/identity"
 
 	"github.com/google/uuid"
 )
@@ -54,9 +54,10 @@ func (f *fakeTenantStatusChecker) IsActive(ctx context.Context, tenantID uuid.UU
 }
 
 func newTestRequest(method, target string) *http.Request {
-	claims := &auth.CustomClaims{TenantID: uuid.New(), UserID: uuid.New()}
+	tenantID := uuid.New()
+	ident := &identity.ResolvedIdentity{UserID: uuid.New(), TenantID: &tenantID}
 	req := httptest.NewRequest(method, target, nil)
-	return req.WithContext(auth.WithClaims(req.Context(), claims))
+	return req.WithContext(identity.WithIdentity(req.Context(), ident))
 }
 
 func TestCacheMiddleware(t *testing.T) {
@@ -318,7 +319,7 @@ func TestCacheMiddleware(t *testing.T) {
 		}
 	})
 
-	t.Run("returns 401 when claims are missing", func(t *testing.T) {
+	t.Run("returns 401 when identity is missing", func(t *testing.T) {
 		t.Parallel()
 		store := &fakeResponseCache{}
 		routes := &staticRouteResolver{route: &gateway.Route{}, ok: true}

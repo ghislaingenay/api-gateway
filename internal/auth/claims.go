@@ -4,32 +4,29 @@ import (
 	"fmt"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 )
 
 // CustomClaims are the identity claims the gateway trusts once a JWT's
-// signature and standard registered claims (exp, nbf, iat) have been
-// validated. Downstream middleware must read identity only from these
-// claims, never from request headers.
+// signature and standard registered claims (exp, nbf, iat, iss) have been
+// validated. Keycloak is the sole token issuer (FEAT-012): the gateway
+// never issues tokens itself and no longer trusts tenant/role/permissions
+// claims — those are resolved server-side per request by
+// identity.ResolveMiddleware instead. Subject (jwt.RegisteredClaims.Subject)
+// carries the Keycloak sub, used as the caller's stable identity key.
 type CustomClaims struct {
 	jwt.RegisteredClaims
-	TenantID    uuid.UUID `json:"tenant_id"`
-	UserID      uuid.UUID `json:"user_id"`
-	Role        string    `json:"role"`
-	RoleID      uuid.UUID `json:"role_id"`
-	Permissions []string  `json:"permissions"`
-	Email       string    `json:"email"`
+	Email string `json:"email"`
 }
 
 // Validate implements jwt.ClaimsValidator so the parser rejects tokens
 // missing the claims downstream middleware requires to identify the
-// request's tenant and user.
+// caller.
 func (c CustomClaims) Validate() error {
-	if c.TenantID == uuid.Nil {
-		return fmt.Errorf("%w: tenant_id", ErrMissingClaims)
+	if c.Subject == "" {
+		return fmt.Errorf("%w: sub", ErrMissingClaims)
 	}
-	if c.UserID == uuid.Nil {
-		return fmt.Errorf("%w: user_id", ErrMissingClaims)
+	if c.Email == "" {
+		return fmt.Errorf("%w: email", ErrMissingClaims)
 	}
 	return nil
 }

@@ -9,7 +9,7 @@ import (
 // Role represents a system role with associated permissions.
 type Role struct {
 	ID           uuid.UUID `json:"id" db:"id"`
-	Name         string    `json:"name" db:"name" validate:"required,oneof=admin manager viewer"`
+	Name         string    `json:"name" db:"name" validate:"required,oneof=admin manager viewer owner"`
 	DisplayName  string    `json:"display_name" db:"display_name" validate:"required,min=2,max=100"`
 	Description  string    `json:"description" db:"description" validate:"required"`
 	Permissions  []string  `json:"permissions" db:"permissions"`

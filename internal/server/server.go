@@ -7,11 +7,12 @@ import (
 	"api-gateway/internal/database"
 	"api-gateway/internal/gateway"
 	"api-gateway/internal/health"
+	"api-gateway/internal/identity"
 	"api-gateway/internal/logger"
-	"api-gateway/internal/loginguard"
+	"api-gateway/internal/onboarding"
+	"api-gateway/internal/profile"
 	"api-gateway/internal/ratelimit"
 	"api-gateway/internal/rbac"
-	"api-gateway/internal/refreshtoken"
 	"api-gateway/internal/resilience"
 	"api-gateway/internal/tenant"
 	"api-gateway/internal/user"
@@ -32,26 +33,23 @@ type Server struct {
 	roleCache              rbac.RoleCache
 	keyStore               auth.KeyStore
 	jwtAlgorithms          []string
+	jwtIssuer              string
 	routeTable             *gateway.RouteTable
 	tenantStatus           gateway.TenantStatusChecker
 	proxy                  gateway.Proxier
 	rateLimiter            ratelimit.MultiWindowLimiter
-	ipLimiter              ratelimit.KeyLimiter
 	rateLimits             ratelimit.LimitsProvider
 	rateLimitDefs          ratelimit.Defaults
-	loginRatePerMinute     int
-	loginGuard             loginguard.Guard
-	loginSecurity          config.LoginSecurityConfig
-	trustedProxyHops       int
 	responseCache          cache.ResponseCache
 	cacheDefaultTTL        time.Duration
 	validationMaxBodyBytes int64
 	healthChecker          *health.DependencyChecker
 	userRepo               user.Repository
 	tenantRepo             tenant.Repository
-	refreshTokens          refreshtoken.Repository
-	signer                 auth.Signer
-	cookieConfig           *config.CookieConfig
+	profileRepo            profile.Repository
+	identityResolver       identity.Resolver
+	tenantUserCache        *identity.TenantUserCache
+	onboardingService      onboarding.Service
 	corsConfig             *config.CORSConfig
 }
 
@@ -69,6 +67,10 @@ func NewServer(redisClient *redis.Client) *http.Server {
 	}
 
 	jwtConfig := config.LoadJWTConfig()
+	if jwtConfig.Issuer == "" {
+		logger.Default().Error("server: JWT_ISSUER is required and was not set")
+		os.Exit(1)
+	}
 	keyStore, err := auth.NewKeyStore(jwtConfig)
 	if err != nil {
 		logger.Default().Error("server: failed to load JWT key store", "error", err.Error())
@@ -89,24 +91,21 @@ func NewServer(redisClient *redis.Client) *http.Server {
 	cacheConfig := config.LoadCacheConfig()
 	resilienceConfig := config.LoadResilienceConfig()
 	validationConfig := config.LoadValidationConfig()
-	loginSecurityConfig := config.LoadLoginSecurityConfig()
-	clientIPConfig := config.LoadClientIPConfig()
-	cookieConfig := config.LoadCookieConfig(config.LoadAppConfig())
+	identityConfig := config.LoadIdentityConfig()
 	corsConfig := config.LoadCORSConfig()
 
-	signer, err := auth.NewSigner(jwtConfig.SigningKID, jwtConfig.SigningPrivateKey)
-	if err != nil {
-		logger.Default().Error("server: failed to build JWT signer", "error", err.Error())
-		os.Exit(1)
-	}
-
 	slidingWindowLimiter := ratelimit.NewSlidingWindowLimiter(redisClient)
+
+	userRepo := user.NewRepository(dbService.GetDB())
+	identityResolver := identity.NewResolver(dbService.GetDB(), userRepo)
+	tenantUserCache := identity.NewTenantUserCache(identityResolver, redisClient, identityConfig.CacheTTL)
 
 	NewServer := &Server{
 		port:          port,
 		roleCache:     roleCache,
 		keyStore:      keyStore,
 		jwtAlgorithms: jwtConfig.AllowedAlgorithms,
+		jwtIssuer:     jwtConfig.Issuer,
 		routeTable:    routeTable,
 		tenantStatus:  tenantStatus,
 		proxy: gateway.NewResilientProxier(
@@ -118,25 +117,21 @@ func NewServer(redisClient *redis.Client) *http.Server {
 			},
 		),
 		rateLimiter: slidingWindowLimiter,
-		ipLimiter:   slidingWindowLimiter,
 		rateLimits:  tenantStatus,
 		rateLimitDefs: ratelimit.Defaults{
 			PerMinute: rateLimitConfig.DefaultPerMinute,
 			PerHour:   rateLimitConfig.DefaultPerHour,
 		},
-		loginRatePerMinute:     rateLimitConfig.LoginPerMinute,
-		loginGuard:             loginguard.NewRedisGuard(redisClient, loginSecurityConfig.FailureWindow),
-		loginSecurity:          *loginSecurityConfig,
-		trustedProxyHops:       clientIPConfig.TrustedProxyHops,
 		responseCache:          cache.NewResponseCache(redisClient),
 		cacheDefaultTTL:        cacheConfig.DefaultTTL,
 		validationMaxBodyBytes: validationConfig.MaxBodyBytes,
 		healthChecker:          health.NewDependencyChecker(redisClient, dbService.GetDB()),
-		userRepo:               user.NewRepository(dbService.GetDB()),
+		userRepo:               userRepo,
 		tenantRepo:             tenantRepo,
-		refreshTokens:          refreshtoken.NewRepository(dbService.GetDB()),
-		signer:                 signer,
-		cookieConfig:           cookieConfig,
+		profileRepo:            profile.NewRepository(dbService.GetDB()),
+		identityResolver:       identityResolver,
+		tenantUserCache:        tenantUserCache,
+		onboardingService:      onboarding.NewService(dbService.GetDB()),
 		corsConfig:             corsConfig,
 	}
 
@@ -148,6 +143,7 @@ func NewServer(redisClient *redis.Client) *http.Server {
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
+	server.RegisterOnShutdown(tenantUserCache.Close)
 
 	return server
 }

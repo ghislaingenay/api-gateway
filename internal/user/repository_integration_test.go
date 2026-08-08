@@ -81,27 +81,26 @@ func mustInsertTenantAndRole(t *testing.T, db *sql.DB) (tenantID, roleID uuid.UU
 	return tenantID, roleID
 }
 
-func TestRepository_GetByEmail_GetByID_UpdateLastLoginAt(t *testing.T) {
+func TestRepository_GetByKeycloakSub_GetByID(t *testing.T) {
 	db := mustStartMigratedPostgres(t)
-	tenantID, roleID := mustInsertTenantAndRole(t, db)
 	repo := user.NewRepository(db)
 	ctx := context.Background()
 
 	var userID uuid.UUID
 	if err := db.QueryRow(`
-		INSERT INTO users (tenant_id, role_id, email, password_hash, is_active)
-		VALUES ($1, $2, 'user@test.local', 'hash', true)
+		INSERT INTO users (keycloak_sub, email)
+		VALUES ('sub-1', 'user@test.local')
 		RETURNING id
-	`, tenantID, roleID).Scan(&userID); err != nil {
+	`).Scan(&userID); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
 
-	byEmail, err := repo.GetByEmail(ctx, tenantID, "user@test.local")
+	bySub, err := repo.GetByKeycloakSub(ctx, "sub-1")
 	if err != nil {
-		t.Fatalf("GetByEmail() error = %v", err)
+		t.Fatalf("GetByKeycloakSub() error = %v", err)
 	}
-	if byEmail.ID != userID {
-		t.Errorf("GetByEmail().ID = %v, want %v", byEmail.ID, userID)
+	if bySub.ID != userID {
+		t.Errorf("GetByKeycloakSub().ID = %v, want %v", bySub.ID, userID)
 	}
 
 	byID, err := repo.GetByID(ctx, userID)
@@ -111,32 +110,15 @@ func TestRepository_GetByEmail_GetByID_UpdateLastLoginAt(t *testing.T) {
 	if byID.Email != "user@test.local" {
 		t.Errorf("GetByID().Email = %q, want %q", byID.Email, "user@test.local")
 	}
-	if byID.LastLoginAt != nil {
-		t.Errorf("GetByID().LastLoginAt = %v, want nil before any login", byID.LastLoginAt)
-	}
-
-	now := time.Now().Truncate(time.Second)
-	if err := repo.UpdateLastLoginAt(ctx, userID, now); err != nil {
-		t.Fatalf("UpdateLastLoginAt() error = %v", err)
-	}
-
-	updated, err := repo.GetByID(ctx, userID)
-	if err != nil {
-		t.Fatalf("GetByID() after update error = %v", err)
-	}
-	if updated.LastLoginAt == nil || !updated.LastLoginAt.Equal(now) {
-		t.Errorf("GetByID().LastLoginAt = %v, want %v", updated.LastLoginAt, now)
-	}
 }
 
-func TestRepository_GetByEmail_NotFound(t *testing.T) {
+func TestRepository_GetByKeycloakSub_NotFound(t *testing.T) {
 	db := mustStartMigratedPostgres(t)
-	tenantID, _ := mustInsertTenantAndRole(t, db)
 	repo := user.NewRepository(db)
 
-	_, err := repo.GetByEmail(context.Background(), tenantID, "nobody@test.local")
+	_, err := repo.GetByKeycloakSub(context.Background(), "nonexistent-sub")
 	if err != user.ErrUserNotFound {
-		t.Errorf("GetByEmail() error = %v, want ErrUserNotFound", err)
+		t.Errorf("GetByKeycloakSub() error = %v, want ErrUserNotFound", err)
 	}
 }
 
@@ -147,5 +129,84 @@ func TestRepository_GetByID_NotFound(t *testing.T) {
 	_, err := repo.GetByID(context.Background(), uuid.New())
 	if err != user.ErrUserNotFound {
 		t.Errorf("GetByID() error = %v, want ErrUserNotFound", err)
+	}
+}
+
+func TestRepository_EnsureByKeycloakSub_JITProvisionsOnce(t *testing.T) {
+	db := mustStartMigratedPostgres(t)
+	repo := user.NewRepository(db)
+	ctx := context.Background()
+
+	first, err := repo.EnsureByKeycloakSub(ctx, "sub-jit", "jit@test.local")
+	if err != nil {
+		t.Fatalf("EnsureByKeycloakSub() error = %v", err)
+	}
+
+	second, err := repo.EnsureByKeycloakSub(ctx, "sub-jit", "jit@test.local")
+	if err != nil {
+		t.Fatalf("EnsureByKeycloakSub() second call error = %v", err)
+	}
+
+	if first.ID != second.ID {
+		t.Errorf("EnsureByKeycloakSub() created a duplicate row: first.ID = %v, second.ID = %v", first.ID, second.ID)
+	}
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE keycloak_sub = 'sub-jit'`).Scan(&count); err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("users row count for sub-jit = %d, want 1", count)
+	}
+}
+
+func TestRepository_ListTenantAccess(t *testing.T) {
+	db := mustStartMigratedPostgres(t)
+	tenantID, roleID := mustInsertTenantAndRole(t, db)
+	repo := user.NewRepository(db)
+	ctx := context.Background()
+
+	u, err := repo.EnsureByKeycloakSub(ctx, "sub-access", "access@test.local")
+	if err != nil {
+		t.Fatalf("EnsureByKeycloakSub() error = %v", err)
+	}
+
+	if _, err := db.Exec(`
+		INSERT INTO tenant_users (tenant_id, user_id, role_id) VALUES ($1, $2, $3)
+	`, tenantID, u.ID, roleID); err != nil {
+		t.Fatalf("insert tenant_users: %v", err)
+	}
+
+	access, err := repo.ListTenantAccess(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("ListTenantAccess() error = %v", err)
+	}
+	if len(access) != 1 {
+		t.Fatalf("ListTenantAccess() returned %d entries, want 1", len(access))
+	}
+	if access[0].TenantID != tenantID {
+		t.Errorf("ListTenantAccess()[0].TenantID = %v, want %v", access[0].TenantID, tenantID)
+	}
+	if access[0].RoleName != "viewer" {
+		t.Errorf("ListTenantAccess()[0].RoleName = %q, want %q", access[0].RoleName, "viewer")
+	}
+}
+
+func TestRepository_ListTenantAccess_Empty(t *testing.T) {
+	db := mustStartMigratedPostgres(t)
+	repo := user.NewRepository(db)
+	ctx := context.Background()
+
+	u, err := repo.EnsureByKeycloakSub(ctx, "sub-no-access", "no-access@test.local")
+	if err != nil {
+		t.Fatalf("EnsureByKeycloakSub() error = %v", err)
+	}
+
+	access, err := repo.ListTenantAccess(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("ListTenantAccess() error = %v", err)
+	}
+	if len(access) != 0 {
+		t.Errorf("ListTenantAccess() returned %d entries, want 0", len(access))
 	}
 }

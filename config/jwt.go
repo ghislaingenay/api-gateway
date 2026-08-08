@@ -22,12 +22,10 @@ type JWTConfig struct {
 	// JWKSRefreshInterval is how often the JWKS key set is refreshed in the
 	// background. Defaults to defaultJWKSRefreshInterval when unset/invalid.
 	JWKSRefreshInterval time.Duration
-	// SigningKID is the kid used to sign newly issued tokens. Its public
-	// half must be present in the JWKS document served at JWKSURL.
-	SigningKID string
-	// SigningPrivateKey is a base64-encoded PEM-encoded RSA private key used
-	// to sign newly issued tokens.
-	SigningPrivateKey string
+	// Issuer is the expected `iss` claim on every token, validated against
+	// Keycloak's realm issuer URL. Required — no fallback, fails startup if
+	// unset (FEAT-012 FR-1), matching JWKSURL's existing fail-fast posture.
+	Issuer string
 }
 
 // LoadJWTConfig reads JWT settings from the environment.
@@ -36,8 +34,7 @@ type JWTConfig struct {
 // JWT_JWKS_URL is the JWKS endpoint used to fetch/verify signing keys.
 // JWT_JWKS_REFRESH_INTERVAL configures the background refresh cadence
 // (parsed with time.ParseDuration; defaults to 1h when unset or invalid).
-// JWT_SIGNING_KID and JWT_SIGNING_PRIVATE_KEY configure the key used to
-// sign newly issued tokens (login/refresh).
+// JWT_ISSUER is the expected `iss` claim (Keycloak's realm issuer URL).
 func LoadJWTConfig() *JWTConfig {
 	algos := os.Getenv("JWT_ALLOWED_ALGORITHMS")
 	if algos == "" {
@@ -51,11 +48,7 @@ func LoadJWTConfig() *JWTConfig {
 		}
 	}
 
-	signingKID := strings.TrimSpace(os.Getenv("JWT_SIGNING_KID"))
-	signingPrivateKey := strings.TrimSpace(os.Getenv("JWT_SIGNING_PRIVATE_KEY"))
-	if signingKID == "" || signingPrivateKey == "" {
-		logger.Default().Warn("JWT_SIGNING_KID or JWT_SIGNING_PRIVATE_KEY is empty, signing keys will not be available for issuing new tokens")
-	}
+	issuer := strings.TrimSpace(os.Getenv("JWT_ISSUER"))
 
 	refreshInterval := defaultJWKSRefreshInterval
 	if raw := strings.TrimSpace(os.Getenv("JWT_JWKS_REFRESH_INTERVAL")); raw != "" {
@@ -71,7 +64,6 @@ func LoadJWTConfig() *JWTConfig {
 		AllowedAlgorithms:   allowed,
 		JWKSURL:             strings.TrimSpace(os.Getenv("JWT_JWKS_URL")),
 		JWKSRefreshInterval: refreshInterval,
-		SigningKID:          signingKID,
-		SigningPrivateKey:   signingPrivateKey,
+		Issuer:              issuer,
 	}
 }

@@ -1,11 +1,12 @@
 # syntax=docker/dockerfile:1
 #
-# Local-development-only image (FEAT-010): bundles the one-shot migration
-# job, the mock downstream service, and a mock JWKS publisher into a
-# single image. Compose builds this once (services share the same
-# `image:` tag) and selects which binary to run per-service via
-# `command:`. None of these are shipped to production — the production
-# gateway image is built from ./Dockerfile.
+# Local-development-only image (FEAT-010, extended by FEAT-012): bundles
+# the one-shot migration job, the mock downstream service, the dev seed
+# job, and the dev DB reset job into a single image. Compose builds this
+# once (services share the same `image:` tag) and selects which binary to
+# run per-service via `command:`. None of these are shipped to production —
+# the production gateway image is built from ./Dockerfile. mockjwks is
+# gone (FEAT-012): Keycloak is now the real JWKS publisher.
 
 FROM golang:1.25-alpine AS build
 WORKDIR /src
@@ -14,9 +15,11 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o /out/migrate ./cmd/migrate
 RUN CGO_ENABLED=0 go build -o /out/mockorders ./cmd/mockorders
-RUN CGO_ENABLED=0 go build -o /out/mockjwks ./cmd/mockjwks
+RUN CGO_ENABLED=0 go build -o /out/seed ./cmd/seed
+RUN CGO_ENABLED=0 go build -o /out/dbflush ./cmd/dbflush
 
 FROM alpine:3.20
 COPY --from=build /out/migrate /usr/local/bin/migrate
 COPY --from=build /out/mockorders /usr/local/bin/mockorders
-COPY --from=build /out/mockjwks /usr/local/bin/mockjwks
+COPY --from=build /out/seed /usr/local/bin/seed
+COPY --from=build /out/dbflush /usr/local/bin/dbflush

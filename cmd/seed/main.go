@@ -1,6 +1,10 @@
-// Command seed inserts a tenant and a small set of test users with known
-// dev passwords, for exercising the auth endpoints locally. It refuses to
-// run unless APP_ENV=development, since it writes known, weak credentials.
+// Command seed inserts a tenant and a small set of demo users/tenant
+// memberships for exercising the gateway locally against Keycloak. It
+// refuses to run unless APP_ENV=development. Unlike the pre-FEAT-012
+// version, it no longer creates credentials — Keycloak owns those; this
+// seeds gateway-side users rows whose keycloak_sub matches the demo users
+// defined in keycloak/realm-export.json, so a login against the local
+// Keycloak resolves to a working tenant membership out of the box.
 package main
 
 import (
@@ -8,18 +12,16 @@ import (
 	"os"
 
 	"api-gateway/config"
-	"api-gateway/internal/auth"
 	"api-gateway/internal/database"
 	"api-gateway/internal/logger"
 
 	"github.com/google/uuid"
 )
 
-const seedPassword = "password123"
-
 type seedUser struct {
-	email string
-	role  string
+	keycloakSub string
+	email       string
+	role        string
 }
 
 var seedTenant = struct {
@@ -27,9 +29,12 @@ var seedTenant = struct {
 	slug string
 }{name: "Seed Tenant", slug: "seed-tenant"}
 
+// keycloakSub values here must match the "id" fields of the demo users
+// defined in keycloak/realm-export.json — that fixed id is what Keycloak
+// issues as the token's sub claim.
 var seedUsers = []seedUser{
-	{email: "admin@seed.test", role: "admin"},
-	{email: "viewer@seed.test", role: "viewer"},
+	{keycloakSub: "11111111-1111-1111-1111-111111111111", email: "admin@seed.test", role: "owner"},
+	{keycloakSub: "22222222-2222-2222-2222-222222222222", email: "viewer@seed.test", role: "viewer"},
 }
 
 func main() {
@@ -43,14 +48,8 @@ func main() {
 	db := dbService.GetDB()
 	ctx := context.Background()
 
-	passwordHash, err := auth.HashPassword(seedPassword)
-	if err != nil {
-		logger.Default().Error("seed: hash password", "error", err.Error())
-		os.Exit(1)
-	}
-
 	var tenantID uuid.UUID
-	err = db.QueryRowContext(ctx, `
+	err := db.QueryRowContext(ctx, `
 		INSERT INTO tenants (name, slug, tier)
 		VALUES ($1, $2, 'free')
 		ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
@@ -68,16 +67,29 @@ func main() {
 			os.Exit(1)
 		}
 
-		_, err := db.ExecContext(ctx, `
-			INSERT INTO users (tenant_id, role_id, email, password_hash, is_active, email_verified)
-			VALUES ($1, $2, $3, $4, true, true)
-			ON CONFLICT (tenant_id, email) DO UPDATE SET password_hash = EXCLUDED.password_hash
-		`, tenantID, roleID, su.email, passwordHash)
+		var userID uuid.UUID
+		err := db.QueryRowContext(ctx, `
+			INSERT INTO users (keycloak_sub, email)
+			VALUES ($1, $2)
+			ON CONFLICT (keycloak_sub) DO UPDATE SET email = EXCLUDED.email
+			RETURNING id
+		`, su.keycloakSub, su.email).Scan(&userID)
 		if err != nil {
 			logger.Default().Error("seed: upsert user", "email", su.email, "error", err.Error())
 			os.Exit(1)
 		}
-		logger.Default().Info("seed: user ready", "email", su.email, "role", su.role, "password", seedPassword, "tenant_slug", seedTenant.slug)
+
+		_, err = db.ExecContext(ctx, `
+			INSERT INTO tenant_users (tenant_id, user_id, role_id)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (tenant_id, user_id) DO UPDATE SET role_id = EXCLUDED.role_id
+		`, tenantID, userID, roleID)
+		if err != nil {
+			logger.Default().Error("seed: upsert tenant_users", "email", su.email, "error", err.Error())
+			os.Exit(1)
+		}
+
+		logger.Default().Info("seed: user ready", "email", su.email, "role", su.role, "keycloak_sub", su.keycloakSub, "tenant_slug", seedTenant.slug)
 	}
 
 	logger.Default().Info("seed: done")

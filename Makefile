@@ -20,6 +20,12 @@ serve:
 # Seed dev/test users (requires APP_ENV=development)
 seed:
 	@go run cmd/seed/main.go
+
+# Drop/recreate the local database, re-migrate, and reseed (requires
+# APP_ENV=development)
+db-reset:
+	@go run cmd/dbflush/main.go
+
 # Create DB container
 docker-run:
 	@if docker compose up --build 2>/dev/null; then \
