@@ -143,6 +143,7 @@ func NewServer(redisClient *redis.Client) *http.Server {
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
+	server.RegisterOnShutdown(tenantUserCache.Close)
 
 	return server
 }

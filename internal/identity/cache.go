@@ -58,17 +58,59 @@ type TenantUserCache struct {
 	data map[string]entry
 
 	group singleflight.Group
+
+	stopCleanup chan struct{}
 }
 
 // NewTenantUserCache returns a *TenantUserCache backed by loader. A nil
 // redisClient disables the Redis tier (in-process caching only), which
-// tests rely on.
+// tests rely on. Call Close when the cache is no longer needed to stop
+// the background expiry sweep.
 func NewTenantUserCache(loader Resolver, redisClient *redis.Client, ttl time.Duration) *TenantUserCache {
 	var store tenantUserStore
 	if redisClient != nil {
 		store = redisClient
 	}
-	return &TenantUserCache{loader: loader, redis: store, ttl: ttl, data: make(map[string]entry)}
+	c := &TenantUserCache{
+		loader:      loader,
+		redis:       store,
+		ttl:         ttl,
+		data:        make(map[string]entry),
+		stopCleanup: make(chan struct{}),
+	}
+	if ttl > 0 {
+		go c.cleanupLoop()
+	}
+	return c
+}
+
+// Close stops the background expiry sweep. Safe to call once.
+func (c *TenantUserCache) Close() {
+	close(c.stopCleanup)
+}
+
+func (c *TenantUserCache) cleanupLoop() {
+	ticker := time.NewTicker(c.ttl)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			c.deleteExpired()
+		case <-c.stopCleanup:
+			return
+		}
+	}
+}
+
+func (c *TenantUserCache) deleteExpired() {
+	now := time.Now()
+	c.mu.Lock()
+	for k, e := range c.data {
+		if now.After(e.expiresAt) {
+			delete(c.data, k)
+		}
+	}
+	c.mu.Unlock()
 }
 
 // Resolve returns the caller's TenantUser role assignment for tenantID, or
