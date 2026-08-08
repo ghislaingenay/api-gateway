@@ -37,9 +37,10 @@ type Server struct {
 	routeTable             *gateway.RouteTable
 	tenantStatus           gateway.TenantStatusChecker
 	proxy                  gateway.Proxier
-	rateLimiter            ratelimit.MultiWindowLimiter
+	rateLimiter            ratelimit.Limiter
 	rateLimits             ratelimit.LimitsProvider
 	rateLimitDefs          ratelimit.Defaults
+	onboardingPerDayLimit  int
 	responseCache          cache.ResponseCache
 	cacheDefaultTTL        time.Duration
 	validationMaxBodyBytes int64
@@ -93,12 +94,14 @@ func NewServer(redisClient *redis.Client) *http.Server {
 	validationConfig := config.LoadValidationConfig()
 	identityConfig := config.LoadIdentityConfig()
 	corsConfig := config.LoadCORSConfig()
+	onboardingConfig := config.LoadOnboardingConfig()
 
 	slidingWindowLimiter := ratelimit.NewSlidingWindowLimiter(redisClient)
 
 	userRepo := user.NewRepository(dbService.GetDB())
 	identityResolver := identity.NewResolver(dbService.GetDB(), userRepo)
 	tenantUserCache := identity.NewTenantUserCache(identityResolver, redisClient, identityConfig.CacheTTL)
+	ensureUserCache := identity.NewEnsureUserCache(identityResolver, identityConfig.CacheTTL)
 
 	NewServer := &Server{
 		port:          port,
@@ -122,6 +125,7 @@ func NewServer(redisClient *redis.Client) *http.Server {
 			PerMinute: rateLimitConfig.DefaultPerMinute,
 			PerHour:   rateLimitConfig.DefaultPerHour,
 		},
+		onboardingPerDayLimit:  onboardingConfig.PerDayLimit,
 		responseCache:          cache.NewResponseCache(redisClient),
 		cacheDefaultTTL:        cacheConfig.DefaultTTL,
 		validationMaxBodyBytes: validationConfig.MaxBodyBytes,
@@ -129,9 +133,9 @@ func NewServer(redisClient *redis.Client) *http.Server {
 		userRepo:               userRepo,
 		tenantRepo:             tenantRepo,
 		profileRepo:            profile.NewRepository(dbService.GetDB()),
-		identityResolver:       identityResolver,
+		identityResolver:       ensureUserCache,
 		tenantUserCache:        tenantUserCache,
-		onboardingService:      onboarding.NewService(dbService.GetDB()),
+		onboardingService:      onboarding.NewService(dbService.GetDB(), onboardingConfig.MaxTenantsPerUser),
 		corsConfig:             corsConfig,
 	}
 

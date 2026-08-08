@@ -28,6 +28,22 @@ func (f *fakeLimiter) AllowBoth(ctx context.Context, tenantID, userID uuid.UUID,
 	return f.decisions[WindowMinute], f.decisions[WindowHour], nil
 }
 
+type fakeSingleWindowLimiter struct {
+	decision Decision
+	err      error
+	calls    int
+	gotKey   string
+}
+
+func (f *fakeSingleWindowLimiter) Allow(ctx context.Context, key string, window Window, limit int) (Decision, error) {
+	f.calls++
+	f.gotKey = key
+	if f.err != nil {
+		return Decision{}, f.err
+	}
+	return f.decision, nil
+}
+
 type fakeLimitsProvider struct {
 	limits tenant.RateLimits
 	err    error
@@ -206,6 +222,117 @@ func TestRateLimitMiddleware(t *testing.T) {
 		}
 		if w.Result().StatusCode != http.StatusOK {
 			t.Fatalf("status = %d, want 200", w.Result().StatusCode)
+		}
+	})
+}
+
+func TestOnboardingRateLimitMiddleware(t *testing.T) {
+	t.Parallel()
+
+	nextCalled := func() (http.Handler, *bool) {
+		called := false
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusOK)
+		}), &called
+	}
+
+	newOnboardingRequest := func(userID uuid.UUID) *http.Request {
+		ident := &identity.ResolvedIdentity{UserID: userID}
+		req := httptest.NewRequest(http.MethodPost, "/onboarding", nil)
+		return req.WithContext(identity.WithIdentity(req.Context(), ident))
+	}
+
+	t.Run("allows and sets headers when within the window", func(t *testing.T) {
+		t.Parallel()
+
+		limiter := &fakeSingleWindowLimiter{decision: Decision{Allowed: true, Limit: 1, Remaining: 0}}
+		next, called := nextCalled()
+
+		handler := OnboardingRateLimitMiddleware(limiter, WindowDay, 1)(next)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, newOnboardingRequest(uuid.New()))
+
+		if !*called {
+			t.Fatal("expected next handler to be called")
+		}
+		if w.Result().StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", w.Result().StatusCode)
+		}
+		if got := w.Header().Get("X-RateLimit-Limit"); got != "1" {
+			t.Errorf("X-RateLimit-Limit = %q, want 1", got)
+		}
+	})
+
+	t.Run("denies with 429 and Retry-After when the daily limit is exceeded", func(t *testing.T) {
+		t.Parallel()
+
+		limiter := &fakeSingleWindowLimiter{decision: Decision{Allowed: false, Limit: 1, Remaining: 0, RetryAfter: time.Hour}}
+		next, called := nextCalled()
+
+		handler := OnboardingRateLimitMiddleware(limiter, WindowDay, 1)(next)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, newOnboardingRequest(uuid.New()))
+
+		if *called {
+			t.Fatal("expected next handler NOT to be called")
+		}
+		if w.Result().StatusCode != http.StatusTooManyRequests {
+			t.Fatalf("status = %d, want 429", w.Result().StatusCode)
+		}
+		if got := w.Header().Get("Retry-After"); got != "3600" {
+			t.Errorf("Retry-After = %q, want 3600", got)
+		}
+	})
+
+	t.Run("fails open when the limiter backend is unavailable", func(t *testing.T) {
+		t.Parallel()
+
+		limiter := &fakeSingleWindowLimiter{err: errors.New("connection refused")}
+		next, called := nextCalled()
+
+		handler := OnboardingRateLimitMiddleware(limiter, WindowDay, 1)(next)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, newOnboardingRequest(uuid.New()))
+
+		if !*called {
+			t.Fatal("expected next handler to be called (fail open)")
+		}
+	})
+
+	t.Run("returns 401 when identity is missing", func(t *testing.T) {
+		t.Parallel()
+
+		limiter := &fakeSingleWindowLimiter{}
+		next, called := nextCalled()
+
+		handler := OnboardingRateLimitMiddleware(limiter, WindowDay, 1)(next)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/onboarding", nil)
+		handler.ServeHTTP(w, req)
+
+		if *called {
+			t.Fatal("expected next handler NOT to be called")
+		}
+		if w.Result().StatusCode != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401", w.Result().StatusCode)
+		}
+	})
+
+	t.Run("keys by user id, not tenant", func(t *testing.T) {
+		t.Parallel()
+
+		userID := uuid.New()
+		limiter := &fakeSingleWindowLimiter{decision: Decision{Allowed: true, Limit: 1, Remaining: 0}}
+		next, _ := nextCalled()
+
+		handler := OnboardingRateLimitMiddleware(limiter, WindowDay, 1)(next)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, newOnboardingRequest(userID))
+
+		want := "onboarding:" + userID.String()
+		if limiter.gotKey != want {
+			t.Errorf("limiter key = %q, want %q", limiter.gotKey, want)
 		}
 	})
 }

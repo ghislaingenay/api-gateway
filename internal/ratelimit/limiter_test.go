@@ -98,3 +98,63 @@ func TestSlidingWindowLimiter_AllowBoth(t *testing.T) {
 		})
 	}
 }
+
+func TestSlidingWindowLimiter_Allow(t *testing.T) {
+	fixedNow := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name      string
+		store     *fakeLimiterStore
+		limit     int
+		wantErr   bool
+		wantOK    bool
+		wantRemai int
+	}{
+		{
+			name:      "within limit",
+			store:     &fakeLimiterStore{val: []interface{}{int64(1), "0"}},
+			limit:     1,
+			wantOK:    true,
+			wantRemai: 0,
+		},
+		{
+			name:  "over limit denies",
+			store: &fakeLimiterStore{val: []interface{}{int64(2), "0"}},
+			limit: 1,
+		},
+		{
+			name:    "redis eval error propagates",
+			store:   &fakeLimiterStore{err: errors.New("connection refused")},
+			limit:   1,
+			wantErr: true,
+		},
+		{
+			name:    "malformed eval result shape errors",
+			store:   &fakeLimiterStore{val: []interface{}{int64(1)}},
+			limit:   1,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			limiter := &SlidingWindowLimiter{redis: tt.store, now: func() time.Time { return fixedNow }}
+			decision, err := limiter.Allow(context.Background(), "onboarding:user-1", WindowDay, tt.limit)
+
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Allow() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err != nil {
+				return
+			}
+			if decision.Allowed != tt.wantOK {
+				t.Errorf("Allowed = %v, want %v", decision.Allowed, tt.wantOK)
+			}
+			if tt.wantOK && decision.Remaining != tt.wantRemai {
+				t.Errorf("Remaining = %d, want %d", decision.Remaining, tt.wantRemai)
+			}
+		})
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"api-gateway/internal/audit"
+	"api-gateway/internal/logger"
 
 	"github.com/google/uuid"
 )
@@ -22,6 +23,7 @@ func RequirePermission(permission string) func(http.Handler) http.Handler {
 				writeUnauthorized(w, r)
 				return
 			}
+			logger.Default().Info("identity RequirePermission", "identity_permissions", ident.Permissions, "permission", permission, "user_id", ident.UserID.String())
 			if !slices.Contains(ident.Permissions, permission) {
 				audit.LogAuthzDecision(r.Context(), false, tenantIDOrNil(ident), ident.UserID, permission)
 				writeForbidden(w, r, "insufficient permissions")

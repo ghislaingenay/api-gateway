@@ -43,7 +43,7 @@ func (s *Server) RegisterRoutes() http.Handler {
 	mux.Handle("GET /auth/me", s.requireIdentity(
 		ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(identity.MeHandler(s.userRepo, s.profileRepo))))
 	mux.Handle("POST /onboarding", s.requireIdentity(
-		ratelimit.RateLimitMiddleware(s.rateLimiter, s.rateLimits, s.rateLimitDefs)(onboarding.Handler(s.onboardingService))))
+		ratelimit.OnboardingRateLimitMiddleware(s.rateLimiter, ratelimit.WindowDay, s.onboardingPerDayLimit)(onboarding.Handler(s.onboardingService))))
 
 	mux.Handle("/api/", auth.JWTAuthMiddleware(s.keyStore, s.jwtAlgorithms, s.jwtIssuer)(
 		identity.ResolveMiddleware(s.identityResolver, s.tenantUserCache, s.roleCache)(
