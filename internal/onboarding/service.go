@@ -26,9 +26,6 @@ type service struct {
 	maxTenantsPerUser int
 }
 
-// NewService returns a Service backed by PostgreSQL. maxTenantsPerUser caps
-// how many tenants a single user may hold membership in; Onboard refuses
-// with ErrTenantLimitReached once a caller is already a member of that many.
 func NewService(db *sql.DB, maxTenantsPerUser int) Service {
 	return &service{db: db, maxTenantsPerUser: maxTenantsPerUser}
 }
